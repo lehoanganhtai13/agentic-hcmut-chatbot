@@ -8,7 +8,7 @@ class Settings:
     def __init__(self):
 
         # Load environment variables
-        env_file = os.getenv("ENVIRONMENT_FILE", "/environments/.env")
+        env_file = os.getenv("ENVIRONMENT_FILE", "environments/.env")
         status = load_dotenv(env_file)
         if not status:
             raise Exception(f"Could not load environment variables from {env_file}")
@@ -24,10 +24,14 @@ class Settings:
 
         # Model serving settings
         self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "EMPTY")
-        self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "EMPTY")
         self.OTHER_API_KEY = os.getenv("OTHER_API_KEY", "EMPTY")
 
         # Agent settings
         self.SCRAPELESS_API_KEY = os.getenv("SCRAPELESS_API_KEY", "")
+
+        # Index settings
+        self.MINIO_BUCKET_INDEX_NAME = os.getenv("MINIO_BUCKET_INDEX_NAME", "index_data")
+        self.MILVUS_COLLECTION_DOCUMENT_NAME = os.getenv("MILVUS_COLLECTION_DOCUMENT_NAME", "document_data")
+        self.MILVUS_COLLECTION_FAQ_NAME = os.getenv("MILVUS_COLLECTION_FAQ_NAME", "faq_data")
 
 SETTINGS = Settings()

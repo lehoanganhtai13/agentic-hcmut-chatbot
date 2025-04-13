@@ -1,5 +1,7 @@
 import json
+import uuid
 from typing import List
+from tqdm.auto import tqdm
 
 from chatbot.core.model_clients import LLMCore
 from chatbot.indexing.context_document.base_class import ExtractedContext, ReconstructedChunk
@@ -49,6 +51,7 @@ class ChunkReconstructor:
         Returns:
             reconstructed_chunks (List[ReconstructedChunk]): Reconstructed chunks.
         """
+        progress_bar = tqdm(chunks, desc="Reconstructing chunks")
         reconstructed_chunks = []
         for chunk in chunks:
             # Step 1: Rewrite the chunk
@@ -60,7 +63,18 @@ class ChunkReconstructor:
             # Step 3: Combine the title and chunk
             title_and_chunk = self.combine_title_and_chunk(title, rewritten_chunk)
 
-            reconstructed_chunks.append(ReconstructedChunk(document=context.document, chunk=title_and_chunk))
+            reconstructed_chunks.append(ReconstructedChunk(
+                id=str(uuid.uuid4()),
+                document=context.document,
+                chunk=title_and_chunk
+            ))
+
+            # Update progress bar
+            progress_bar.update(1)
+
+        # Close the progress bar
+        progress_bar.close()
+        
         return reconstructed_chunks
 
     def rewrite_chunk(self, chunk: str, context: ExtractedContext) -> str:
@@ -77,9 +91,14 @@ class ChunkReconstructor:
         response = self.llm.complete(
             prompt=REWRITE_TEXT_CHUNK_PROMPT_TEMPLATE.format(
                 text_chunk=chunk,
-                context=context.context
+                context=context.context,
+                max_tokens=self.llm.max_new_tokens
             )
         ).text
+
+        if response.startswith("```json"):
+            response = response.replace("```json", "").replace("```", "")
+
         rewritten_chunk = json.loads(response)["rewritten_chunk"]
         return rewritten_chunk
     
@@ -98,6 +117,10 @@ class ChunkReconstructor:
                 rewritten_chunk=rewritten_chunk
             )
         ).text
+
+        if response.startswith("```json"):
+            response = response.replace("```json", "").replace("```", "")
+
         title_or_quick_description = json.loads(response)["title_or_quick_description"]
 
         # Remove trailing period
@@ -117,4 +140,4 @@ class ChunkReconstructor:
         Returns:
             title_and_chunk (str): Title and chunk combined.
         """
-        return f"{title}: {chunk}"
+        return f"# {title}\n\n{chunk}"

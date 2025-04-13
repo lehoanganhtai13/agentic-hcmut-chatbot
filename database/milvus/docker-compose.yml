@@ -25,7 +25,7 @@ services:
   milvus-standalone:
     hostname: milvus-standalone
     container_name: milvus-standalone-container
-    image: milvusdb/milvus:v2.5.4
+    image: milvusdb/milvus:v2.5.9
     restart: always
     command: ["milvus", "run", "standalone"]
     security_opt:
@@ -56,7 +56,7 @@ services:
   milvus-attu:
     hostname: milvus-attu
     container_name: milvus-attu-container
-    image:  zilliz/attu:v2.5.4
+    image:  zilliz/attu:v2.5.6
     restart: always
     environment:
       MILVUS_URL: milvus-standalone:19530

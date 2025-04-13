@@ -47,7 +47,10 @@ class ContextExtractor:
             context (ExtractedContext): Context extracted from the document.
         """
         response = self.llm.complete(
-            prompt=CONTEXT_EXTRACTION_PROMPT_TEMPLATE.format(text=document)
+            prompt=CONTEXT_EXTRACTION_PROMPT_TEMPLATE.format(
+                text=document,
+                max_tokens=self.llm.max_new_tokens
+            )
         ).text
 
         if response.startswith("```json"):

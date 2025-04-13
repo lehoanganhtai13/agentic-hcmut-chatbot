@@ -1,6 +1,6 @@
 import requests
 import tiktoken
-from typing import Any, List
+from typing import Any, List, Optional
 
 from transformers import AutoTokenizer
 from llama_index.core.embeddings import BaseEmbedding
@@ -23,7 +23,7 @@ class EmbedderCore(BaseEmbedding):
 
     def __init__(
         self,
-        uri: str = "http://localhost:8011",
+        uri: Optional[str] = "http://localhost:8011",
         model_id: str = "dunzhang/stella_en_400M_v5",
         use_openai: bool = False,
         OPENAI_API_KEY: str = "EMPTY",

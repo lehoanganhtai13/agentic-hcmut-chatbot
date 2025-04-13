@@ -1,11 +1,13 @@
 import os
 from typing import List, Optional
 
-from loguru import logger
 import time
 import traceback
+from loguru import logger
+from scipy.sparse._csr import csr_array
+from tqdm.auto import tqdm
 
-from minio import Minio
+from minio import deleteobjects, Minio, S3Error
 from pymilvus.model.sparse.bm25.tokenizers import build_default_analyzer
 from pymilvus.model.sparse import BM25EmbeddingFunction
 
@@ -30,18 +32,22 @@ class BM25Client:
         local_path: Optional[str] = None,
         storage: Optional[Minio] = None,
         bucket_name: Optional[str] = None,
-        remove_after_load: bool = False
+        remove_after_load: bool = False,
+        init_without_load: bool = True,
+        overwrite_minio_bucket: bool = False
     ) -> None:
         """
         Initialize the BM25Client.
         
         Args:
             language (str): Language code for the text analyzer (default: "en")
-            local_path (str): Path to local BM25 state dictionary file (optional)
+            local_path (str): Path to local BM25 state dictionary file to be loaded (optional)
             storage (Minio): MinIO client for cloud storage operations (optional)
             bucket_name (str): MinIO bucket name for storing/retrieving models (optional)
             remove_after_load (bool): Whether to delete the local copy after loading (default: False)
                                Only applies when loading from MinIO storage
+            init_without_load (bool): If True, skip loading the model from local or MinIO (default: True)
+            overwrite_minio_bucket (bool): If True, overwrite the existing bucket in MinIO (default: False)
         
         Raises:
             AssertionError: If neither local_path nor (storage and bucket_name) are provided
@@ -54,44 +60,76 @@ class BM25Client:
 
         assert local_path or (storage and bucket_name), "Please provide the path to the BM25 state dict or the storage client and bucket name!!!"
 
+        if init_without_load:
+            if overwrite_minio_bucket and self.storage_client and self.bucket_name:
+                # List all objects in the bucket with the prefix "bm25/"
+                objects = list(self.storage_client.list_objects(self.bucket_name, prefix="bm25/", recursive=True))
+
+                # Check if the state dict already exists
+                if objects:
+                    logger.info(f"Bucket '{self.bucket_name}' with prefix 'bm25/' already exists. Overwriting...")
+
+                    # Clean up the folder if it exists
+                    try:
+                        # Remove all objects with the prefix "bm25/"
+                        progress_bar = tqdm(total=len(objects), desc="Removing objects from MinIO bucket", unit="object")
+                        for obj in objects:
+                            self.storage_client.remove_object(self.bucket_name, obj.object_name)
+                            progress_bar.update(1)
+                        progress_bar.close()
+
+                        logger.info(f"Removed existing objects in bucket '{self.bucket_name}' with prefix 'bm25/'")
+                    except S3Error as e:
+                        logger.warning(f"Failed to remove objects in bucket '{self.bucket_name}': {e}")
+                        logger.error(traceback.format_exc())
+
+            return # Skip loading the model if init_without_load is True
+
         try:
             # Load the BM25 state dict if local_path is provided
             if local_path:
                 self.bm25.load(local_path)
             elif self.bucket_name and self.storage_client:
                 if not os.path.exists("./bm25_state_dict.json"):
-                    print("Downloading the BM25 state dict...")
+                    logger.info("Downloading the BM25 state dict...")
+
+                    # Download the state dict from MinIO
                     retry = 3
                     while not os.path.exists("./bm25_state_dict.json"):
                         try:
                             self.storage_client.fget_object(bucket_name=self.bucket_name, object_name="bm25/state_dict.json", file_path="./bm25_state_dict.json")
                         except Exception as e:
-                            print(e)
+                            logger.warning(f"Failed to download the BM25 state dict: {e}")
+
                             # Wailt for the file to be ready if exists
                             for i in range(5):
                                 if os.path.exists("./bm25_state_dict.json"):
                                     break
                                 time.sleep(1)
+
+                            # Retry downloading if the file is not found
                             if not os.path.exists("./bm25_state_dict.json"):
-                                print("Failed to download the BM25 state dict. Retrying...")
+                                logger.warning("Failed to download the BM25 state dict. Retrying...")
                                 retry -= 1
+
+                                # If retries are exhausted, raise an error
                                 if retry == 0:
                                     raise ValueError("Failed to download the BM25 state dict")
 
-                print("Loading the BM25 state dict...")
+                logger.info("Loading the BM25 state dict...")
                 if not os.path.exists("./bm25_state_dict.json"):
                     raise ValueError("BM25 state dict not found in the local directory")
                 self.bm25.load("./bm25_state_dict.json")
 
                 # Remove the state dict if exists
                 if os.path.exists("./bm25_state_dict.json") and remove_after_load:
-                    print("Removing the BM25 state dict in the local directory...")
+                    logger.info("Removing the BM25 state dict in the local directory...")
                     os.remove("./bm25_state_dict.json")
             else:
                 raise ValueError("Please provide the path to the BM25 state dict or the storage client and bucket name")
         except Exception as e:
             logger.error(f"Failed to load the BM25 state dict: {e}")
-            traceback.print_exc()
+            logger.error(traceback.format_exc())
 
     def _load_from_local(self, local_path: str) -> None:
         """
@@ -171,13 +209,14 @@ class BM25Client:
             
         raise ValueError(f"Failed to download BM25 state dict after {max_retries} attempts")
 
-    def fit(self, data: List[str], path: str = "./bm25_state_dict.json") -> None:
+    def fit(self, data: List[str], path: str = "./bm25_state_dict.json", auto_save_local: bool = False) -> None:
         """
         Train the BM25 model on the provided text data and save the state dictionary.
         
         Args:
             data (List[str]): List of text documents to train on
             path (str): Path to save the BM25 state dictionary
+            auto_save_local (bool): Whether to automatically save the model locally
             
         Raises:
             ValueError: If storage client and bucket name are not available for uploading
@@ -187,11 +226,12 @@ class BM25Client:
         self.bm25.fit(data)
         
         # Ensure directory exists and save locally
-        dir_path = os.path.dirname(path)
-        if dir_path:
-            os.makedirs(dir_path, exist_ok=True)
-        self.bm25.save(path)
-        logger.info(f"Saved BM25 state dict to {path}")
+        if auto_save_local:
+            dir_path = os.path.dirname(path)
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
+            self.bm25.save(path)
+            logger.info(f"Saved BM25 state dict to {path}")
 
         # Upload to MinIO if storage is configured
         if not (self.storage_client and self.bucket_name):
@@ -205,25 +245,26 @@ class BM25Client:
             file_path=path
         )
 
-    def fit_transform(self, data: List[str], path: str = "./bm25_state_dict.json") -> List:
+    def fit_transform(self, data: List[str], path: str = "./bm25_state_dict.json", auto_save_local: bool = False) -> List[csr_array]:
         """
         Train the BM25 model on the provided text data and transform the documents to embeddings.
         
         Args:
             data (List[str]): List of text documents to train on and transform
             path (str): Path to save the BM25 state dictionary
+            auto_save_local (bool): Whether to automatically save the model locally
             
         Returns:
             List of BM25 embeddings for the input documents
         """
         # Fit the model and save state
-        self.fit(data, path)
+        self.fit(data, path, auto_save_local)
         
         # Transform the documents
         logger.info(f"Encoding {len(data)} documents with BM25")
         return self.encode_text(data)
     
-    def encode_text(self, data: List[str]) -> List[float]:
+    def encode_text(self, data: List[str]) -> List[csr_array]:
         """
         Convert text documents to BM25 embeddings.
         
@@ -231,11 +272,11 @@ class BM25Client:
             data (List[str]): List of text documents to encode
             
         Returns:
-            List of BM25 embeddings for the input documents
+            List[csr_array]: List of BM25 embeddings for the input documents
         """
         return list(self.bm25.encode_documents(data))
 
-    def encode_queries(self, queries: List[str]) -> List[float]:
+    def encode_queries(self, queries: List[str]) -> List[csr_array]:
         """
         Convert search queries to BM25 embeddings.
         
@@ -243,7 +284,7 @@ class BM25Client:
             queries (List[str]): List of search queries to encode
             
         Returns:
-            List of BM25 embeddings for the input queries
+            List[csr_array]: List of BM25 embeddings for the input queries
         """
         return list(self.bm25.encode_queries(queries))
     
