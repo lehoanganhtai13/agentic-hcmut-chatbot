@@ -42,7 +42,7 @@ def init_llm(
         base_url=config.base_url,
         max_new_tokens=config.max_new_tokens,
         temperature=config.temperature,
-        is_chat=(task == "response_llm"),
+        is_chat=config.is_chat,
         use_websocket=config.use_websocket
     )
 
