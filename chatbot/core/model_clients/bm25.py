@@ -226,12 +226,10 @@ class BM25Client:
         self.bm25.fit(data)
         
         # Ensure directory exists and save locally
-        if auto_save_local:
-            dir_path = os.path.dirname(path)
-            if dir_path:
-                os.makedirs(dir_path, exist_ok=True)
-            self.bm25.save(path)
-            logger.info(f"Saved BM25 state dict to {path}")
+        dir_path = os.path.dirname(path)
+        if dir_path:
+            os.makedirs(dir_path, exist_ok=True)
+        self.bm25.save(path)
 
         # Upload to MinIO if storage is configured
         if not (self.storage_client and self.bucket_name):
@@ -244,6 +242,14 @@ class BM25Client:
             object_name="bm25/state_dict.json",
             file_path=path
         )
+
+        if auto_save_local:
+            logger.info(f"Saved BM25 state dict to {path}")
+        else:
+            # Remove the local copy if auto_save_local is False
+            if os.path.exists(path):
+                os.remove(path)
+            logger.info(f"BM25 state dict saved to MinIO bucket '{self.bucket_name}'")
 
     def fit_transform(self, data: List[str], path: str = "./bm25_state_dict.json", auto_save_local: bool = False) -> List[csr_array]:
         """
