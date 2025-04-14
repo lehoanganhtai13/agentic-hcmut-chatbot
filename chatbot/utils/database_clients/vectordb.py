@@ -250,7 +250,7 @@ class VectorDatabase():
             bool: True if the collection is loaded successfully, False otherwise.
         """
         if not self.client.has_collection(collection_name):
-            print(f"Collection {collection_name} does not exist!")
+            logger.error(f"Collection {collection_name} does not exist!")
             return
         
         # Load the collection
@@ -262,10 +262,10 @@ class VectorDatabase():
         # Check if the collection is loaded
         load_state = self.client.get_load_state(collection_name=collection_name)
         if load_state:
-            print(f"Collection {collection_name} is loaded successfully!")
+            logger.info(f"Collection {collection_name} is loaded successfully!")
             return True
         else:
-            print(f"Failed to load collection {collection_name}!")
+            logger.warning(f"Failed to load collection {collection_name}!")
             return False
 
     def insert_vectors(
