@@ -7,7 +7,7 @@ from loguru import logger
 from scipy.sparse._csr import csr_array
 from tqdm.auto import tqdm
 
-from minio import deleteobjects, Minio, S3Error
+from minio import Minio, S3Error
 from pymilvus.model.sparse.bm25.tokenizers import build_default_analyzer
 from pymilvus.model.sparse import BM25EmbeddingFunction
 

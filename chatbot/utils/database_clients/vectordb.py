@@ -1,8 +1,10 @@
-from typing import List, Dict
+from typing import Dict, List, Optional
 
 import asyncio
+import traceback
 from loguru import logger
 from pymilvus import (
+    connections,
     AnnSearchRequest,
     AsyncMilvusClient,
     Collection,
@@ -13,7 +15,7 @@ from pymilvus import (
     RRFRanker,
 )
 
-from chatbot.utils.database_clients.base_class import IndexParam
+from chatbot.utils.database_clients.base_class import EmbeddingData, IndexParam
 from chatbot.utils.database_clients.exceptions import (
     CreateMilvusCollectionError,
     InsertMilvusVectorsError,
@@ -25,6 +27,7 @@ from chatbot.utils.database_clients.exceptions import (
 class VectorDatabase():
     """MilvusClient class for vector database operations."""
     def __init__(self, host: str = "localhost", port: str = "19530", run_async: bool = False) -> None:
+        self.uri = f"http://{host}:{port}"
         self.client = AsyncMilvusClient(uri=f"http://{host}:{port}") if run_async else MilvusClient(uri=f"http://{host}:{port}")
         self.reranker = RRFRanker()
         self.run_async = run_async
@@ -318,8 +321,8 @@ class VectorDatabase():
     def hybrid_search_vectors(
         self,
         collection_name: str,
-        dense_data: Dict,
-        sparse_data: Dict,
+        dense_data: EmbeddingData,
+        sparse_data: EmbeddingData,
         output_fields: List[str],
         top_k: int = 5,
         metric_type: str = "COSINE",
@@ -330,15 +333,17 @@ class VectorDatabase():
 
         Args:
             collection_name (str): Name of the collection.
-            dense_data (Dict): Dense data for the search query.
-            sparse_data (Dict): Sparse data for the search query.
+            dense_data (EmbeddingData): Dense data for the search queries
+            sparse_data (EmbeddingData): Sparse data for the search queries.
             output_fields (List[str]): List of fields to return in the search results.
             top_k (int): Number of results to return.
             metric_type (str): Metric type for the search query.
             index_type (str): Index type for the search query.
 
         Returns:
-            List[List[dict]]: List of hybrid search results for each query embedding.
+            List[List[dict]]: List of hybrid search results (based on number of input queries).
+                Each list contains the top-k search results for each input query.
+                Each result is a dictionary containing the expected output fields.
         """
         index_result = self.check_index_type(index_type)
         if index_result != index_type:
@@ -348,34 +353,39 @@ class VectorDatabase():
         if metric_result != metric_type:
             raise SearchMilvusVectorsError(f"Error in hybrid search: {metric_result}")
         
+        if not connections.has_connection(alias="default"):
+            # If no connection exists, create a new one
+            connections.connect(uri=self.uri, _async=self.run_async)
+
+        # Construct the collection
         self.collection = Collection(collection_name)
 
         try:
             search_requests = []
-            for i in range(len(dense_data["embeddings"])):
+            for i in range(len(dense_data.embeddings)):
                 # Create dense search request
                 dense_search_params = {
-                    "data": dense_data["embeddings"][i],
-                    "anns_field": dense_data["field_name"],
+                    "data": [dense_data.embeddings[i]],
+                    "anns_field": dense_data.field_name,
                     "param": {
                         "metric_type": metric_type,
                         "params": {"ef": top_k} if index_type == "HNSW" else {"nprobe": 8}
                     },
                     "limit": top_k,
-                    "expr": dense_data["filtering_expr"]
+                    "expr": dense_data.filtering_expr
                 }
                 dense_search_request = AnnSearchRequest(**dense_search_params)
 
                 # Create sparse search request
                 sparse_search_params = {
-                    "data": sparse_data["embeddings"][i],
-                    "anns_field": sparse_data["field_name"],
+                    "data": [sparse_data.embeddings[i]],
+                    "anns_field": sparse_data.field_name,
                     "param": {
                         "metric_type": "IP",
                         "params": {}
                     },
                     "limit": top_k,
-                    "expr": sparse_data["filtering_expr"]
+                    "expr": sparse_data.filtering_expr
                 }
                 sparse_search_request = AnnSearchRequest(**sparse_search_params)
 
@@ -402,6 +412,7 @@ class VectorDatabase():
                 )
             return results
         except Exception as e:
+            logger.error(traceback.format_exc())
             raise SearchMilvusVectorsError(f"Error in hybrid search: {str(e)}")
 
     def search_desnse_vectors(
@@ -410,7 +421,7 @@ class VectorDatabase():
         query_embeddings: List[List],
         field_name: str,
         output_fields: List[str],
-        filtering_expr: str = "",
+        filtering_expr: Optional[str] = "",
         top_k: int = 5,
         metric_type: str = "COSINE",
         index_type: str = "HNSW"
@@ -423,7 +434,7 @@ class VectorDatabase():
             query_embeddings (List[List]): List of query embeddings.
             field_name (str): Field name to search.
             output_fields (List[str]): List of fields to return in the search results.
-            filtering_expr (str): Filtering expression for the search query.
+            filtering_expr (Optional[str]): Filtering expression for the search query.
             top_k (int): Number of results to return.
             metric_type (str): Metric type for the search query.
             index_type (str): Index type for the search query.
@@ -472,5 +483,6 @@ class VectorDatabase():
                 )
             return results
         except Exception as e:
+            logger.error(traceback.format_exc())
             raise SearchMilvusVectorsError(f"Error in searching dense vectors: {str(e)}")
         
