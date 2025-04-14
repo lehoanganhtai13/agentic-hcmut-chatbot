@@ -67,9 +67,6 @@ up-db:
 	@echo "Setting up database services..."
 	@$(MAKE) up-minio
 	@$(MAKE) up-milvus
-	@$(MAKE) up-valkey
-	@$(MAKE) up-mongodb
-	@$(MAKE) up-falkordb
 
 down-minio:
 	@echo "Stopping Minio service..."
@@ -109,11 +106,8 @@ down-chatbot:
 
 down-db:
 	@echo "Stopping database services..."
-	@$(MAKE) down-minio
 	@$(MAKE) down-milvus
-	@$(MAKE) down-valkey
-	@$(MAKE) down-mongodb
-	@$(MAKE) down-falkordb
+	@$(MAKE) down-minio
 
 # Targets for network
 create-network:
