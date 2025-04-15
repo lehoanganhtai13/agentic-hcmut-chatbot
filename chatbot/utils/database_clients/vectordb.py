@@ -24,7 +24,7 @@ from chatbot.utils.database_clients.exceptions import (
 )
 
 
-class VectorDatabase():
+class VectorDatabase:
     """MilvusClient class for vector database operations."""
     def __init__(self, host: str = "localhost", port: str = "19530", run_async: bool = False) -> None:
         self.uri = f"http://{host}:{port}"

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from dataclasses import dataclass, field
 
 
@@ -45,9 +45,9 @@ class ReconstructedChunk:
     
     Args:
         id (str): Unique identifier for the chunk (UUID).
-        document (str): Document to construct chunk from.
         chunk (str): Chunk reconstructed from the document.
+        document (Optional[str]): Document to construct chunk from.
     """
     id: str
-    document: str
     chunk: str
+    document: Optional[str] = None

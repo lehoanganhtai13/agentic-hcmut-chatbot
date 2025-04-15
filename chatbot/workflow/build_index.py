@@ -343,15 +343,7 @@ class DataIndex:
             collection_structure=faq_collection_structure,
             json_index_params=json_index_params
         )
-
-    def save_index(self, file_path):
-        # Placeholder for saving index logic
-        pass
-
-    def load_index(self, file_path):
-        # Placeholder for loading index logic
-        pass
-
+        
 
 if __name__ == "__main__":
     import json

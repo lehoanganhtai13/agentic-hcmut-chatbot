@@ -1,6 +1,5 @@
 import os
 from dotenv import load_dotenv
-from chatbot.config.utils import check_bool
 
 
 class Settings:
