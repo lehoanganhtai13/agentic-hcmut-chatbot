@@ -61,6 +61,13 @@ class BM25Client:
         assert local_path or (storage and bucket_name), "Please provide the path to the BM25 state dict or the storage client and bucket name!!!"
 
         if init_without_load:
+            # Check if the bucket exists
+            if not self.storage_client.bucket_exists(bucket_name):
+                logger.info(f"Bucket '{bucket_name}' does not exist. Creating a new bucket...")
+                self.storage_client.make_bucket(bucket_name)
+                logger.info(f"Created bucket '{bucket_name}'")
+                return
+
             if overwrite_minio_bucket and self.storage_client and self.bucket_name:
                 # List all objects in the bucket with the prefix "bm25/"
                 objects = list(self.storage_client.list_objects(self.bucket_name, prefix="bm25/", recursive=True))
