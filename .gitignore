@@ -7,6 +7,7 @@ __pycache__/
 *.so
 
 # Data and cache
+data/
 .data/
 cache/
 backup/

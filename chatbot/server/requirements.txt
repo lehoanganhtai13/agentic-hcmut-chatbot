@@ -274,6 +274,7 @@ python-bidi==0.6.6
 python-dateutil==2.9.0.post0
 python-docx==1.1.2
 python-dotenv==1.0.1
+python-multipart==0.0.20
 python-pptx==1.0.2
 python-ulid==3.0.0
 pytube==15.0.0
