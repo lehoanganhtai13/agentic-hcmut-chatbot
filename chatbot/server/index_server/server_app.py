@@ -167,10 +167,6 @@ async def upload_and_index(files: List[UploadFile] = File(...)):
                     raise HTTPException(status_code=400, detail=f"Invalid CSV format in {file.filename}")
             else:
                 logger.warning(f"Skipping unsupported file type: {file.filename}")
-
-        # Check if there are any documents (FAQs can be also generated from documents)
-        if not documents:
-            raise HTTPException(status_code=400, detail="No documents to index")
         
         # Run indexing
         await run_indexing(temp_files, documents, FAQs)
