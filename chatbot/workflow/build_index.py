@@ -35,7 +35,8 @@ class DataIndex:
         self,
         llm: LLMCore,
         embedder: EmbedderCore,
-        bm25_client: BM25Client,
+        document_bm25_client: BM25Client,
+        faq_bm25_client: BM25Client,
         preprocessing_config: PreprocessingConfig,
         vector_db: VectorDatabase
     ):
@@ -46,7 +47,8 @@ class DataIndex:
         Args:
             llm (LLMCore): Language model used for context extraction.
             embedder (EmbedderCore): Embedder model to embed the documents into dense vectors.
-            bm25_client (BM25Client): BM25 client to embed the documents into sparse vectors.
+            document_bm25_client (BM25Client): BM25 client to embed the documents into sparse vectors.
+            faq_bm25_client (BM25Client): BM25 client to embed the FAQs into sparse vectors.
             preprocessing_config (PreprocessingConfig): Configuration for preprocessing text.
             vector_db (VectorDatabase): Vector database client for storing indexed data.
         """
@@ -61,7 +63,8 @@ class DataIndex:
         self.faq_augmenter = FaqAugmenter(llm)
         self.vector_db = vector_db
         self.embedder = embedder
-        self.bm25_client = bm25_client
+        self.document_bm25_client = document_bm25_client
+        self.faq_bm25_client = faq_bm25_client
 
     def run(
         self,
@@ -115,7 +118,7 @@ class DataIndex:
         progress_bar = tqdm(index_data.documents, desc="Indexing documents")
 
         # Fit the BM25 client to the documents
-        chunk_sparse_embeddings = self.bm25_client.fit_transform(
+        chunk_sparse_embeddings = self.document_bm25_client.fit_transform(
             [document.chunk for document in index_data.documents]
         )
 
@@ -145,7 +148,7 @@ class DataIndex:
         progress_bar = tqdm(index_data.faqs, desc="Indexing FAQs")
 
         # Fit the BM25 client to the FAQs
-        faq_sparse_embeddings = self.bm25_client.fit_transform(
+        faq_sparse_embeddings = self.faq_bm25_client.fit_transform(
             [faq.question for faq in index_data.faqs]
         )
 
@@ -378,9 +381,14 @@ if __name__ == "__main__":
         models_conf=models_config
     )
     embedder = init_embedder(models_conf=models_config)
-    bm25_client = BM25Client(
+    document_bm25_client = BM25Client(
         storage=minio_client,
-        bucket_name=SETTINGS.MINIO_BUCKET_INDEX_NAME,
+        bucket_name=SETTINGS.MINIO_BUCKET_DOCUMENT_INDEX_NAME,
+        overwrite_minio_bucket=True
+    )
+    faq_bm25_client = BM25Client(
+        storage=minio_client,
+        bucket_name=SETTINGS.MINIO_BUCKET_FAQ_INDEX_NAME,
         overwrite_minio_bucket=True
     )
 
@@ -398,7 +406,8 @@ if __name__ == "__main__":
     indexer = DataIndex(
         llm=llm,
         embedder=embedder,
-        bm25_client=bm25_client,
+        document_bm25_client=document_bm25_client,
+        faq_bm25_client=faq_bm25_client,
         preprocessing_config=preprocessing_config,
         vector_db=vector_db
     )

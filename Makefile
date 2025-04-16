@@ -56,12 +56,12 @@ up-langfuse:
 
 up-build-chatbot:
 	@echo "Building and starting Chatbot service..."
-	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml build chatbot-server
-	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml up -d chatbot-server
+	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml build
+	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml up -d
 
 up-chatbot:
 	@echo "Starting Chatbot service..."
-	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml up -d chatbot-server
+	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml up -d
 
 up-db:
 	@echo "Setting up database services..."

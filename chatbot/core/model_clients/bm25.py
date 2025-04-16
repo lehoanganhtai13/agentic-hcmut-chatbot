@@ -1,10 +1,11 @@
 import os
 from typing import List, Optional
+from concurrent.futures import ThreadPoolExecutor
 
 import time
 import traceback
 from loguru import logger
-from scipy.sparse._csr import csr_array
+from scipy.sparse import csr_array, vstack
 from tqdm.auto import tqdm
 
 from minio import Minio, S3Error
@@ -98,7 +99,7 @@ class BM25Client:
                 self.bm25.load(local_path)
             elif self.bucket_name and self.storage_client:
                 if not os.path.exists("./bm25_state_dict.json"):
-                    logger.info("Downloading the BM25 state dict...")
+                    logger.info(f"Downloading the BM25 state dict from bucket '{self.bucket_name}' ...")
 
                     # Download the state dict from MinIO
                     retry = 3
@@ -287,7 +288,7 @@ class BM25Client:
         Returns:
             List[csr_array]: List of BM25 embeddings for the input documents
         """
-        return list(self.bm25.encode_documents(data))
+        return list(self._encode_documents(data))
 
     def encode_queries(self, queries: List[str]) -> List[csr_array]:
         """
@@ -300,4 +301,25 @@ class BM25Client:
             List[csr_array]: List of BM25 embeddings for the input queries
         """
         return list(self.bm25.encode_queries(queries))
+    
+    def _encode_documents(self, documents: List[str]) -> csr_array:
+        """
+        Convert text documents to BM25 embeddings in parallel using ThreadPool.
+        
+        Args:
+            documents (List[str]): List of text documents to encode
+            
+        Returns:
+            csr_array: Stacked sparse array of BM25 embeddings
+        """
+        # Calculate optimal number of workers - using CPU count or a fixed number
+        max_workers = min(16, len(documents))  # Don't use more workers than documents
+        
+        # Process documents in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Map the encoding function to each document
+            sparse_embs = list(executor.map(self.bm25._encode_document, documents))
+        
+        # Stack the sparse embeddings and convert to CSR format
+        return vstack(sparse_embs).tocsr()
     

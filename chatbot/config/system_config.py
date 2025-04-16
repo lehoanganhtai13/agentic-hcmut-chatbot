@@ -29,7 +29,8 @@ class Settings:
         self.SCRAPELESS_API_KEY = os.getenv("SCRAPELESS_API_KEY", "")
 
         # Index settings
-        self.MINIO_BUCKET_INDEX_NAME = os.getenv("MINIO_BUCKET_INDEX_NAME", "index_data")
+        self.MINIO_BUCKET_FAQ_INDEX_NAME = os.getenv("MINIO_BUCKET_FAQ_INDEX_NAME", "faq-index-data")
+        self.MINIO_BUCKET_DOCUMENT_INDEX_NAME = os.getenv("MINIO_BUCKET_DOCUMENT_INDEX_NAME", "document-index-data")
         self.MILVUS_COLLECTION_DOCUMENT_NAME = os.getenv("MILVUS_COLLECTION_DOCUMENT_NAME", "document_data")
         self.MILVUS_COLLECTION_FAQ_NAME = os.getenv("MILVUS_COLLECTION_FAQ_NAME", "faq_data")
 

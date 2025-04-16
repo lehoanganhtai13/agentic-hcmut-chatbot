@@ -32,10 +32,11 @@ The following steps will help you to get the system up and running:
     ```
 - Start database services:
     ```bash
-    make up-minio
+    make up-db
     ```
+- Build and start the server:
     ```bash
-    make up-milvus
+    make up-build-chatbot
     ```
 
 ---

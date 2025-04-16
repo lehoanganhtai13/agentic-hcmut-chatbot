@@ -1,0 +1,55 @@
+services:
+  document-server:
+    hostname: document-server
+    container_name: document-server
+    restart: always
+    build:
+      context: .
+      dockerfile: ./server/document_server/Dockerfile
+      tags:
+        - "hcmut-chatbot/document-server:latest"
+    image: hcmut-chatbot/document-server:latest
+    ports:
+      - "8001:8000"
+    environment:
+      TOKENIZERS_PARALLELISM: "false"
+      PROMETHEUS_MULTIPROC_DIR: /app/prometheus_multiproc
+      ENVIRONMENT_FILE: /app/environments/.env
+    volumes:
+      - ./.data/logs:/app/logs
+      - ./.data/prometheus_multiproc:/app/prometheus_multiproc
+      - ./../environments:/app/environments:ro
+      - .:/app/chatbot
+    command: uvicorn chatbot.server.document_server.server_app:app --host 0.0.0.0 --port 8000 --reload --loop asyncio
+    networks:
+      - chatbot
+    
+  faq-server:
+    hostname: faq-server
+    container_name: faq-server
+    restart: always
+    build:
+      context: .
+      dockerfile: ./server/faq_server/Dockerfile
+      tags:
+        - "hcmut-chatbot/faq-server:latest"
+    image: hcmut-chatbot/faq-server:latest
+    ports:
+      - "8002:8000"
+    environment:
+      TOKENIZERS_PARALLELISM: "false"
+      PROMETHEUS_MULTIPROC_DIR: /app/prometheus_multiproc
+      ENVIRONMENT_FILE: /app/environments/.env
+    volumes:
+      - ./.data/logs:/app/logs
+      - ./.data/prometheus_multiproc:/app/prometheus_multiproc
+      - ./../environments:/app/environments:ro
+      - .:/app/chatbot
+    command: uvicorn chatbot.server.faq_server.server_app:app --host 0.0.0.0 --port 8000 --reload --loop asyncio
+    networks:
+      - chatbot
+
+networks:
+  chatbot:
+    name: chatbot
+    external: true

@@ -1,11 +1,11 @@
 FROM python:3.10-slim
 
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY ./../requirements.txt .
+COPY ./server/requirements.txt .
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends iputils-ping && \
@@ -17,9 +17,10 @@ RUN pip install 'uvicorn[standard]'
 
 COPY ./config /app/chatbot/config
 COPY ./core /app/chatbot/core
-COPY ./prompt /app/chatbot/prompt
+COPY ./indexing /app/chatbot/indexing
+COPY ./prompts /app/chatbot/prompts
 COPY ./utils /app/chatbot/utils
 COPY ./workflow /app/chatbot/workflow
-COPY ./server /app/chatbot/server
+COPY ./server/faq_server /app/chatbot/server/faq_server
 
 EXPOSE 8000

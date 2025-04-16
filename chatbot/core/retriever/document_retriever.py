@@ -108,7 +108,7 @@ if __name__ == "__main__":
     )
     bm25_client = BM25Client(
         storage=minio_client,
-        bucket_name=SETTINGS.MINIO_BUCKET_INDEX_NAME,
+        bucket_name=SETTINGS.MINIO_BUCKET_DOCUMENT_INDEX_NAME,
         init_without_load=False,
         remove_after_load=True
     )
