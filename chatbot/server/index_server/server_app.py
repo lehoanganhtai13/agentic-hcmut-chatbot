@@ -20,7 +20,7 @@ from loguru import logger
 from chatbot.config.system_config import SETTINGS
 from chatbot.core.model_clients import BM25Client
 from chatbot.core.model_clients.load_model import init_embedder, init_llm
-from chatbot.indexing.context_document.base_class import PreprocessingConfig, ReconstructedChunk
+from chatbot.indexing.context_document.base_class import PreprocessingConfig
 from chatbot.indexing.faq.base_class import FAQDocument
 from chatbot.workflow.build_index import DataIndex
 from chatbot.utils.base_class import ModelsConfig
