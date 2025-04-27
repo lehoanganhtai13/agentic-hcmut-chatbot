@@ -96,43 +96,11 @@ class BM25Client:
         try:
             # Load the BM25 state dict if local_path is provided
             if local_path:
-                self.bm25.load(local_path)
+                self._load_from_local(local_path)
             elif self.bucket_name and self.storage_client:
-                if not os.path.exists("./bm25_state_dict.json"):
-                    logger.info(f"Downloading the BM25 state dict from bucket '{self.bucket_name}' ...")
-
-                    # Download the state dict from MinIO
-                    retry = 3
-                    while not os.path.exists("./bm25_state_dict.json"):
-                        try:
-                            self.storage_client.fget_object(bucket_name=self.bucket_name, object_name="bm25/state_dict.json", file_path="./bm25_state_dict.json")
-                        except Exception as e:
-                            logger.warning(f"Failed to download the BM25 state dict: {e}")
-
-                            # Wailt for the file to be ready if exists
-                            for i in range(5):
-                                if os.path.exists("./bm25_state_dict.json"):
-                                    break
-                                time.sleep(1)
-
-                            # Retry downloading if the file is not found
-                            if not os.path.exists("./bm25_state_dict.json"):
-                                logger.warning("Failed to download the BM25 state dict. Retrying...")
-                                retry -= 1
-
-                                # If retries are exhausted, raise an error
-                                if retry == 0:
-                                    raise ValueError("Failed to download the BM25 state dict")
-
-                logger.info("Loading the BM25 state dict...")
-                if not os.path.exists("./bm25_state_dict.json"):
-                    raise ValueError("BM25 state dict not found in the local directory")
-                self.bm25.load("./bm25_state_dict.json")
-
-                # Remove the state dict if exists
-                if os.path.exists("./bm25_state_dict.json") and remove_after_load:
-                    logger.info("Removing the BM25 state dict in the local directory...")
-                    os.remove("./bm25_state_dict.json")
+                # Load the state dict from MinIO
+                self._load_from_minio(remove_after_load)
+                    
             else:
                 raise ValueError("Please provide the path to the BM25 state dict or the storage client and bucket name")
         except Exception as e:
@@ -166,7 +134,7 @@ class BM25Client:
         
         # Download if local copy doesn't exist
         if not os.path.exists(local_path):
-            logger.info("Downloading BM25 state dict from MinIO...")
+            logger.info(f"Downloading BM25 state dict from MinIO in bucket '{self.bucket_name}'...")
             self._download_from_minio(local_path)
                 
         # Load the dictionary

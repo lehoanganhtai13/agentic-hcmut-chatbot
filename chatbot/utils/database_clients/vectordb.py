@@ -28,7 +28,7 @@ class VectorDatabase:
     """MilvusClient class for vector database operations."""
     def __init__(self, host: str = "localhost", port: str = "19530", run_async: bool = False) -> None:
         self.uri = f"http://{host}:{port}"
-        self.client = AsyncMilvusClient(uri=f"http://{host}:{port}") if run_async else MilvusClient(uri=f"http://{host}:{port}")
+        self.client = MilvusClient(uri=f"http://{host}:{port}") if not run_async else AsyncMilvusClient(uri=f"http://{host}:{port}")
         self.reranker = RRFRanker()
         self.run_async = run_async
 
@@ -317,6 +317,63 @@ class VectorDatabase:
             return result
         except Exception as e:
             raise GetMilvusVectorsError(f"Error getting vectors: {str(e)}")
+
+    def get_all_vectors(self, collection_name: str, field_names: List[str]) -> List[dict]:
+        """
+        Get all vectors from the collection.
+
+        Args:
+            collection_name (str): Name of the collection.
+            field_names (List[str]): List of fields to return in the search results.
+
+        Returns:
+            List[dict]: List of dictionaries containing all vectors and metadata.
+        """
+        list_records = []
+        try:
+            if not connections.has_connection(alias="default"):
+                # If no connection exists, create a new one
+                connections.connect(uri=self.uri, _async=self.run_async)
+
+            # Get number of items indexed in the database
+            self.collection = Collection(collection_name)
+            num_items = self.collection.num_entities
+
+            if self.run_async:
+                iterator = asyncio.run(
+                    self.client.query_iterator(
+                        collection_name=collection_name,
+                        batch_size=100,
+                        limit=num_items,
+                        output_fields=field_names
+                    )
+                )
+                while True:
+                    batch = iterator.next()
+                    if not batch:
+                        iterator.close()
+                        break
+                    list_records.extend([record for record in batch])
+                
+                result = list_records
+            else:
+                iterator = self.client.query_iterator(
+                    collection_name=collection_name,
+                    batch_size=100,
+                    limit=num_items,
+                    output_fields=field_names
+                )
+                while True:
+                    batch = iterator.next()
+                    if not batch:
+                        iterator.close()
+                        break
+                    list_records.extend([record for record in batch])
+                
+                result = list_records
+            return result
+        except Exception as e:
+            raise GetMilvusVectorsError(f"Error getting all vectors: {str(e)}")
 
     def hybrid_search_vectors(
         self,

@@ -1,4 +1,5 @@
 import json
+import io
 import os
 import tempfile
 import traceback
@@ -7,6 +8,7 @@ from typing import List, Optional
 
 import uvicorn
 from contextlib import asynccontextmanager
+from enum import Enum
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from minio import Minio
 import pandas as pd
@@ -18,13 +20,23 @@ from loguru import logger
 from chatbot.config.system_config import SETTINGS
 from chatbot.core.model_clients import BM25Client
 from chatbot.core.model_clients.load_model import init_embedder, init_llm
-from chatbot.indexing.context_document.base_class import PreprocessingConfig
+from chatbot.indexing.context_document.base_class import PreprocessingConfig, ReconstructedChunk
 from chatbot.indexing.faq.base_class import FAQDocument
 from chatbot.workflow.build_index import DataIndex
 from chatbot.utils.base_class import ModelsConfig
 from chatbot.utils.database_clients import VectorDatabase
 
 # ------------------- Global Model Classes -------------------
+
+class InitializationMode(Enum):
+    NEW = "new"
+    LOAD_EXISTING = "load existing"
+
+
+class IndexingMode(Enum):
+    FULL_INDEX = "full index"
+    INSERT = "insert"
+
 
 class IndexingOutput(BaseModel):
     """Class to store indexing operation response data."""
@@ -39,7 +51,7 @@ class IndexingOutput(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global indexer
+    global indexer, minio_client, llm, embedder, vector_db, preprocessing_config
 
     logger.info("Starting up Data Indexing server...")
     models_config = {}
@@ -64,16 +76,6 @@ async def lifespan(app: FastAPI):
         models_conf=models_config
     )
     embedder = init_embedder(models_conf=models_config)
-    document_bm25_client = BM25Client(
-        storage=minio_client,
-        bucket_name=SETTINGS.MINIO_BUCKET_DOCUMENT_INDEX_NAME,
-        overwrite_minio_bucket=True
-    )
-    faq_bm25_client = BM25Client(
-        storage=minio_client,
-        bucket_name=SETTINGS.MINIO_BUCKET_FAQ_INDEX_NAME,
-        overwrite_minio_bucket=True
-    )
 
     # Initialize the configuration for preprocessing before chunking
     preprocessing_config = PreprocessingConfig()
@@ -85,14 +87,7 @@ async def lifespan(app: FastAPI):
         run_async=False
     )
     
-    indexer = DataIndex(
-        llm=llm,
-        embedder=embedder,
-        document_bm25_client=document_bm25_client,
-        faq_bm25_client=faq_bm25_client,
-        preprocessing_config=preprocessing_config,
-        vector_db=vector_db
-    )
+    indexer = None
 
     yield
     logger.info("Shutting down Data Indexing server...")
@@ -102,13 +97,160 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
+@app.post("/load")
+async def load(
+    mode: InitializationMode
+):
+    """
+    Load the indexer model.
+    
+    Args:
+        mode (InitializationMode): Mode of initialization (`NEW` and `LOAD_EXISTING`)
+    """
+    global indexer
+    try:
+        if mode == InitializationMode.NEW:
+            logger.info("Initializing new indexer model...")
+
+            # Initialize new BM25 models
+            document_bm25_client = BM25Client(
+                storage=minio_client,
+                bucket_name=SETTINGS.MINIO_BUCKET_DOCUMENT_INDEX_NAME,
+                overwrite_minio_bucket=True
+            )
+            faq_bm25_client = BM25Client(
+                storage=minio_client,
+                bucket_name=SETTINGS.MINIO_BUCKET_FAQ_INDEX_NAME,
+                overwrite_minio_bucket=True
+            )
+
+            # Initialize a new indexer model
+            indexer = DataIndex(
+                llm=llm,
+                embedder=embedder,
+                document_bm25_client=document_bm25_client,
+                faq_bm25_client=faq_bm25_client,
+                preprocessing_config=preprocessing_config,
+                vector_db=vector_db
+            )
+            return {"status": "success", "message": "New indexer model initialized."}
+        
+        elif mode == InitializationMode.LOAD_EXISTING:
+            logger.info("Loading existing indexer model...")
+
+            # Load the existing BM25 models
+            document_bm25_client = BM25Client(
+                storage=minio_client,
+                bucket_name=SETTINGS.MINIO_BUCKET_DOCUMENT_INDEX_NAME,
+                init_without_load=False,
+                remove_after_load=True
+            )
+            faq_bm25_client = BM25Client(
+                storage=minio_client,
+                bucket_name=SETTINGS.MINIO_BUCKET_FAQ_INDEX_NAME,
+                init_without_load=False,
+                remove_after_load=True
+            )
+
+            # Load existing indexer model
+            indexer = DataIndex(
+                llm=llm,
+                embedder=embedder,
+                document_bm25_client=document_bm25_client,
+                faq_bm25_client=faq_bm25_client,
+                preprocessing_config=preprocessing_config,
+                vector_db=vector_db
+            )
+            return {"status": "success", "message": "Existing indexer model loaded."}
+        
+    except Exception as e:
+        logger.error(f"Initialization error: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to initialize indexer: {str(e)}")
+    
+
+@app.post("/load_weight")
+async def load_weight(files: List[UploadFile] = File(...)):
+    """
+    Load the weight of the indexer model.
+    
+    Args:
+        files (List[UploadFile]): List of files to upload (including `faq_state_dict.json` and `document_state_dict.json`)
+    """
+    global indexer
+    try:
+        if not files:
+            raise HTTPException(status_code=400, detail="No file provided for upload")
+        
+        required_files = ["faq_state_dict.json", "document_state_dict.json"]
+        # Check if the uploaded files are the expected ones
+        if not all(file.filename in required_files for file in files):
+            raise HTTPException(status_code=400, detail="Uploaded files must be 'faq_state_dict.json' and 'document_state_dict.json'.")
+        
+        # Upload the files to MinIO
+        for file in files:
+            # Determine the bucket name based on the file name
+            bucket_name = ""
+            if file.filename == "faq_state_dict.json":
+                bucket_name = SETTINGS.MINIO_BUCKET_FAQ_INDEX_NAME
+            elif file.filename == "document_state_dict.json":
+                bucket_name = SETTINGS.MINIO_BUCKET_DOCUMENT_INDEX_NAME
+
+            # Read the file content
+            file_content = await file.read()
+
+            # Clean the bucket if it already exists
+            BM25Client(
+                storage=minio_client,
+                bucket_name=bucket_name,
+                overwrite_minio_bucket=True
+            )
+
+            minio_client.put_object(
+                bucket_name=bucket_name,
+                object_name="bm25/state_dict.json",
+                data=io.BytesIO(file_content),
+                length=len(file_content)
+            )
+            logger.info(f"Uploaded {file.filename} to MinIO.")
+
+        # Initialize new BM25 models
+        document_bm25_client = BM25Client(
+            storage=minio_client,
+            bucket_name=SETTINGS.MINIO_BUCKET_DOCUMENT_INDEX_NAME,
+            init_without_load=False,
+            remove_after_load=True
+        )
+        faq_bm25_client = BM25Client(
+            storage=minio_client,
+            bucket_name=SETTINGS.MINIO_BUCKET_FAQ_INDEX_NAME,
+            init_without_load=False,
+            remove_after_load=True
+        )
+
+        # Initialize a new indexer model
+        indexer = DataIndex(
+            llm=llm,
+            embedder=embedder,
+            document_bm25_client=document_bm25_client,
+            faq_bm25_client=faq_bm25_client,
+            preprocessing_config=preprocessing_config,
+            vector_db=vector_db
+        )
+        return {"status": "success", "message": "Weights loaded successfully."}
+    except Exception as e:
+        logger.error(f"Error loading weights: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to load weights: {str(e)}")
+
 @app.post("/upload_index", response_model=IndexingOutput)
-async def upload_and_index(files: List[UploadFile] = File(...)):
+async def upload_and_index(files: List[UploadFile] = File(...), indexing_mode: IndexingMode = IndexingMode.FULL_INDEX):
     """
     Upload files and index them into the database.
     
     Args:
         files (List[UploadFile]): List of files to upload and index.
+        indexing_mode (IndexingMode): Mode of indexing (`FULL_INDEX` and `INSERT`)
     """
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
@@ -169,7 +311,7 @@ async def upload_and_index(files: List[UploadFile] = File(...)):
                 logger.warning(f"Skipping unsupported file type: {file.filename}")
         
         # Run indexing
-        await run_indexing(temp_files, documents, FAQs)
+        await run_indexing(temp_files, documents, FAQs, indexing_mode)
         
         return IndexingOutput(
             status="success",
@@ -190,15 +332,29 @@ async def upload_and_index(files: List[UploadFile] = File(...)):
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error processing upload: {str(e)}")
 
-async def run_indexing(temp_files: List[str], documents: List[str], FAQs: Optional[List[FAQDocument]] = None):
+async def run_indexing(
+    temp_files: List[str],
+    documents: List[str] = [],
+    FAQs: List[FAQDocument] = [],
+    indexing_mode: IndexingMode = IndexingMode.FULL_INDEX
+):
     try:
-        result = indexer.run(
-            documents=documents,
-            faqs=FAQs,
-            document_collection_name=SETTINGS.MILVUS_COLLECTION_DOCUMENT_NAME,
-            faq_collection_name=SETTINGS.MILVUS_COLLECTION_FAQ_NAME
-        )
-        logger.info(f"Indexing completed successfully: {len(documents)} documents, {len(FAQs)} FAQs")
+        if indexing_mode == IndexingMode.FULL_INDEX:
+            result = indexer.run_index(
+                documents=documents,
+                faqs=FAQs,
+                document_collection_name=SETTINGS.MILVUS_COLLECTION_DOCUMENT_NAME,
+                faq_collection_name=SETTINGS.MILVUS_COLLECTION_FAQ_NAME
+            )
+            logger.info(f"Indexing completed successfully: {len(documents)} documents, {len(FAQs)} FAQs")
+        elif indexing_mode == IndexingMode.INSERT:
+            result = indexer.run_insert(
+                documents=documents,
+                faqs=FAQs,
+                document_collection_name=SETTINGS.MILVUS_COLLECTION_DOCUMENT_NAME,
+                faq_collection_name=SETTINGS.MILVUS_COLLECTION_FAQ_NAME
+            )
+            logger.info(f"Inserted {len(documents)} documents, {len(FAQs)} FAQs into the index")
 
         # Clean up temp files
         for temp_file in temp_files:

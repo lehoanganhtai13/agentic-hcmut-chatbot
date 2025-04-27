@@ -7,7 +7,7 @@ from llama_index.core import Document
 from loguru import logger
 
 from chatbot.core.model_clients import BM25Client, EmbedderCore, LLMCore
-from chatbot.indexing.context_document.base_class import PreprocessingConfig
+from chatbot.indexing.context_document.base_class import PreprocessingConfig, ReconstructedChunk
 from chatbot.indexing.context_document import (
     ChunkReconstructor,
     ContextExtractor,
@@ -66,10 +66,10 @@ class DataIndex:
         self.document_bm25_client = document_bm25_client
         self.faq_bm25_client = faq_bm25_client
 
-    def run(
+    def run_index(
         self,
-        documents: List[str],
-        faqs: List[FAQDocument] = None,
+        documents: List[str] = [],
+        faqs: List[FAQDocument] = [],
         document_collection_name: str = "document_collection",
         faq_collection_name: str = "faq_collection"
     ) -> IndexData:
@@ -77,8 +77,8 @@ class DataIndex:
         Run the indexing process for documents and FAQs.
 
         Args:
-            documents (list): List of documents to index.
-            faqs (list): List of FAQ documents to index.
+            documents (List[str]): List of documents to index.
+            faqs (List[FAQDocument]): List of FAQ documents to index.
             document_collection_name (str): Name of the collection for documents.
             faq_collection_name (str): Name of the collection for FAQs.
         """
@@ -87,11 +87,46 @@ class DataIndex:
             documents=documents,
             faqs=faqs,
             document_collection_name=document_collection_name,
-            faq_collection_name=faq_collection_name
+            faq_collection_name=faq_collection_name,
+            overwrite_collection=True
         )
 
         # Index data
         self.index(
+            index_data=index_data,
+            document_collection_name=document_collection_name,
+            faq_collection_name=faq_collection_name
+        )
+
+        return index_data
+    
+    def run_insert(
+        self,
+        documents: List[str] = [],
+        faqs: List[FAQDocument] = [],
+        document_collection_name: str = "document_collection",
+        faq_collection_name: str = "faq_collection"
+    ) -> IndexData:
+        """
+        Run the inserting process for documents and FAQs.
+
+        Args:
+            documents (List[str]): List of documents to insert.
+            faqs (List[FAQDocument]): List of FAQ documents to insert.
+            document_collection_name (str): Name of the collection for documents.
+            faq_collection_name (str): Name of the collection for FAQs.
+        """
+        # Build index for new data
+        index_data = self.build_index(
+            documents=documents,
+            faqs=faqs,
+            document_collection_name=document_collection_name,
+            faq_collection_name=faq_collection_name,
+            overwrite_collection=False
+        )
+
+        # Insert the new index data into the vector database
+        self.insert(
             index_data=index_data,
             document_collection_name=document_collection_name,
             faq_collection_name=faq_collection_name
@@ -178,30 +213,154 @@ class DataIndex:
 
         logger.info("Indexing completed.")
 
-    def build_index(
+    def insert(
         self,
-        documents: List[str],
-        faqs: List[FAQDocument] = None,
+        index_data: IndexData,
         document_collection_name: str = "document_collection",
         faq_collection_name: str = "faq_collection"
+    ) -> None:
+        """
+        Insert the new index data into the vector database, updating the old index data.
+
+        Args:
+            index_data (IndexData): New data to be inserted.
+            document_collection_name (str): Name of the collection for documents.
+            faq_collection_name (str): Name of the collection for FAQs.
+        """
+
+        logger.info("Inserting new index data and updating old index data...")
+
+        # Get indexed dense embeddings
+        chunk_data = self.vector_db.get_all_vectors(
+            collection_name=document_collection_name,
+            field_names=["chunk_id", "chunk", "chunk_dense_embedding"]
+        )
+        faq_data = self.vector_db.get_all_vectors(
+            collection_name=faq_collection_name,
+            field_names=["faq_id", "faq", "question_dense_embedding"]
+        )
+        
+        # Store the dense embeddings in a dictionary
+        chunk_embedding_dict = {
+            chunk["chunk_id"]: chunk["chunk_dense_embedding"] for chunk in chunk_data
+        }
+        faq_embedding_dict = {
+            faq["faq_id"]: faq["question_dense_embedding"] for faq in faq_data
+        }
+
+        # Add dense embeddings for the new data
+        dense_embeddings = self.embedder.get_text_embedding_batch(
+            [document.chunk for document in index_data.documents]
+        )
+        for idx, document in enumerate(index_data.documents):
+            # Update the dense embedding in the dictionary
+            chunk_embedding_dict[document.id] = dense_embeddings[idx]
+
+        dense_embeddings = self.embedder.get_text_embedding_batch(
+            [faq.question for faq in index_data.faqs]
+        )
+        for idx, faq in enumerate(index_data.faqs):
+            # Update the dense embedding in the dictionary
+            faq_embedding_dict[faq.id] = dense_embeddings[idx]
+
+        # Update BM25 state dicts
+        total_chunks = [document.chunk for document in index_data.documents] + [data["chunk"] for data in chunk_data]
+        chunk_sparse_embeddings = self.document_bm25_client.fit_transform(
+            data=total_chunks
+        )
+        total_faqs = [faq.question for faq in index_data.faqs] + [data["faq"]["question"] for data in faq_data]
+        faq_sparse_embeddings = self.faq_bm25_client.fit_transform(
+            data=total_faqs
+        )
+
+        # Add old chunk data into index data
+        index_data.documents.extend([
+            ReconstructedChunk(
+                id=data["chunk_id"],
+                chunk= data["chunk"]
+            )
+            for data in chunk_data
+        ])
+        # Add old FAQ data into index data
+        index_data.faqs.extend([
+            FAQDocument(
+                id=data["faq_id"],
+                question=data["faq"]["question"],
+                answer=data["faq"]["answer"]
+            )
+            for data in faq_data
+        ])
+
+        # Clear the old data in the vector database
+        logger.info("Deleting old data in the vector database...")
+        self._create_collection(document_collection_name, faq_collection_name)
+
+        # Index all chunk data into the vector database
+        for idx, document in enumerate(index_data.documents):
+            # Get dense embedding from the dictionary
+            dense_embedding = chunk_embedding_dict[document.id]
+
+            # Index the document into the vector database
+            self.vector_db.insert_vectors(
+                collection_name=document_collection_name,
+                data={
+                    "chunk_id": document.id,
+                    "chunk": document.chunk,
+                    "chunk_dense_embedding": dense_embedding,
+                    "chunk_sparse_embedding": chunk_sparse_embeddings[idx]
+                }
+            )
+
+        # Index all FAQ data into the vector database
+        for idx, faq in enumerate(index_data.faqs):
+            # Get dense embedding from the dictionary
+            dense_embedding = faq_embedding_dict[faq.id]
+
+            # Index all FAQs into the vector database
+            self.vector_db.insert_vectors(
+                collection_name=faq_collection_name,
+                data={
+                    "faq_id": faq.id,
+                    "faq": {
+                        "question": faq.question,
+                        "answer": faq.answer
+                    },
+                    "question_dense_embedding": dense_embedding,
+                    "question_sparse_embedding": faq_sparse_embeddings[idx]
+                }
+            )
+
+    def build_index(
+        self,
+        documents: List[str] = [],
+        faqs: List[FAQDocument] = [],
+        document_collection_name: str = "document_collection",
+        faq_collection_name: str = "faq_collection",
+        overwrite_collection: bool = True
     ) -> IndexData:
         """
         Build index for documents and FAQ context.
 
         Args:
-            documents (list): List of documents to index.
-            faqs (list): List of FAQ documents to index.
+            documents (List[str]): List of documents to index.
+            faqs (List[FAQDocument]): List of FAQ documents to index.
             document_collection_name (str): Name of the collection for documents.
             faq_collection_name (str): Name of the collection for FAQs.
+            overwrite_collection (bool): Flag to overwrite existing collections.
 
         Returns:
             IndexData: Data to be indexed containing reconstructed chunks and FAQs.
         """
         # ------ Create collections ------
-        self._create_collection(document_collection_name, faq_collection_name)
+        if overwrite_collection:
+            self._create_collection(document_collection_name, faq_collection_name)
 
         # ------ Build document context ------
         logger.info(f"Generating document context for {len(documents)} documents...")
+
+        # Initialize empty list for reconstructed chunks
+        reconstructed_chunks = []
+
         progress_bar = tqdm(documents, desc="Building document context")
         for document in documents:
             # Step 1: Extract context from documents
@@ -211,10 +370,10 @@ class DataIndex:
             text_chunks = self.semantic_chunker.chunk([Document(text=document)])
 
             # Step 3: Reconstruct documents
-            reconstructed_chunks = self.chunk_reconstructor.reconstruct_chunks(
+            reconstructed_chunks.extend(self.chunk_reconstructor.reconstruct_chunks(
                 chunks=text_chunks,
                 context=extracted_context[0]
-            )
+            ))
 
             # Update progress bar
             progress_bar.update(1)
@@ -223,10 +382,10 @@ class DataIndex:
         progress_bar.close()
 
         # ------ Build FAQ context ------
-        logger.info(f"Generating FAQ context for {len(documents)} documents...")
+        logger.info(f"Generating FAQ context for {len(faqs)} FAQs and {len(reconstructed_chunks)} reconstructed chunks...")
         
         # Initialize empty list for FAQs if not provided
-        processed_faqs = faqs or []
+        processed_faqs = faqs
 
         # Step 1: Expand FAQ pairs from existing ones
         if processed_faqs:
@@ -430,7 +589,7 @@ if __name__ == "__main__":
         for _, row in faq_df.iterrows()
     ]
 
-    result = indexer.run(
+    result = indexer.run_index(
         documents=documents,
         faqs=FAQs,
         document_collection_name=SETTINGS.MILVUS_COLLECTION_DOCUMENT_NAME,
