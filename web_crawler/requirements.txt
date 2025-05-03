@@ -1,0 +1,8 @@
+langdetect==1.0.9
+pydantic==2.11.4
+PyYAML==6.0.2
+reportlab==4.4.0
+requests==2.32.3
+selenium==4.31.0
+validators==0.34.0
+webdriver-manager==4.0.2

@@ -4,8 +4,9 @@ import os
 import tempfile
 import traceback
 import uuid
-from typing import List, Optional
+from typing import List
 
+import httpx
 import uvicorn
 from contextlib import asynccontextmanager
 from enum import Enum
@@ -244,89 +245,136 @@ async def load_weight(files: List[UploadFile] = File(...)):
         raise HTTPException(status_code=500, detail=f"Failed to load weights: {str(e)}")
 
 @app.post("/upload_index", response_model=IndexingOutput)
-async def upload_and_index(files: List[UploadFile] = File(...), indexing_mode: IndexingMode = IndexingMode.FULL_INDEX):
+async def upload_and_index(
+    files: List[UploadFile] = File(default=[]),
+    web_urls: List[str] = [],
+    indexing_mode: IndexingMode = IndexingMode.FULL_INDEX
+):
     """
     Upload files and index them into the database.
     
     Args:
         files (List[UploadFile]): List of files to upload and index.
+        web_urls (List[str]): List of web URLs to index.
         indexing_mode (IndexingMode): Mode of indexing (`FULL_INDEX` and `INSERT`)
     """
-    if not files:
-        raise HTTPException(status_code=400, detail="No files provided")
+    if not files and not web_urls:
+        raise HTTPException(status_code=400, detail="No files or URLs provided for upload")
     
     temp_files = []
     documents = []
     FAQs = []
 
-    try:
-        # Process uploaded files based on their type
-        for file in files:
-            # Create temp file
-            suffix = Path(file.filename).suffix.lower()
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-                # Write content to temp file
-                content = await file.read()
-                temp_file.write(content)
-                temp_file_path = temp_file.name
-                temp_files.append(temp_file_path)
-                
-            # Process based on file type
-            if suffix == ".txt":
-                # Process as document
-                logger.info(f"Processing {file.filename} as document")
-                with open(temp_file_path, "r", encoding="utf-8") as doc_file:
-                    document_content = doc_file.read()
-                    documents.append(document_content)
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        try:
+            # Process uploaded files based on their type
+            for file in files:
+                # Create temp file
+                suffix = Path(file.filename).suffix.lower()
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+                    # Write content to temp file
+                    content = await file.read()
+                    temp_file.write(content)
+                    temp_file_path = temp_file.name
+                    temp_files.append(temp_file_path)
                     
-            elif suffix == ".csv":
-                # Process as FAQ
-                logger.info(f"Processing {file.filename} as FAQ")
-                try:
-                    faq_df = pd.read_csv(temp_file_path)
-                    
-                    # Verify the required columns exist
-                    if "query" not in faq_df.columns or "answer" not in faq_df.columns:
-                        raise HTTPException(
-                            status_code=400, 
-                            detail=f"CSV file {file.filename} must contain 'query' and 'answer' columns"
-                        )
-                    
-                    # Convert rows to FAQDocument objects
-                    for _, row in faq_df.iterrows():
-                        FAQs.append(
-                            FAQDocument(
-                                id=str(uuid.uuid4()),
-                                question=row["query"],
-                                answer=row["answer"]
-                            )
-                        )
+                # Process based on file type
+                if suffix == ".txt":
+                    # Process as document
+                    logger.info(f"Processing {file.filename} as document")
+                    with open(temp_file_path, "r", encoding="utf-8") as doc_file:
+                        document_content = doc_file.read()
+                        documents.append(document_content)
                         
-                except pd.errors.EmptyDataError:
-                    logger.warning(f"Empty CSV file: {file.filename}")
-                except pd.errors.ParserError as e:
-                    logger.error(f"Error parsing CSV file {file.filename}: {str(e)}")
-                    raise HTTPException(status_code=400, detail=f"Invalid CSV format in {file.filename}")
-            else:
-                logger.warning(f"Skipping unsupported file type: {file.filename}")
+                elif suffix == ".csv":
+                    # Process as FAQ
+                    logger.info(f"Processing {file.filename} as FAQ")
+                    try:
+                        faq_df = pd.read_csv(temp_file_path)
+                        
+                        # Verify the required columns exist
+                        if "query" not in faq_df.columns or "answer" not in faq_df.columns:
+                            raise HTTPException(
+                                status_code=400, 
+                                detail=f"CSV file {file.filename} must contain 'query' and 'answer' columns"
+                            )
+                        
+                        # Convert rows to FAQDocument objects
+                        for _, row in faq_df.iterrows():
+                            FAQs.append(
+                                FAQDocument(
+                                    id=str(uuid.uuid4()),
+                                    question=row["query"],
+                                    answer=row["answer"]
+                                )
+                            )
+                            
+                    except pd.errors.EmptyDataError:
+                        logger.warning(f"Empty CSV file: {file.filename}")
+                    except pd.errors.ParserError as e:
+                        logger.error(f"Error parsing CSV file {file.filename}: {str(e)}")
+                        raise HTTPException(status_code=400, detail=f"Invalid CSV format in {file.filename}")
+                else:
+                    logger.warning(f"Skipping unsupported file type: {file.filename}")
+
+            # Process web URLs
+            for url in web_urls:
+                    logger.info(f"Requesting content for URL: {url}")
+                    try:
+                        # Gọi API của web crawler
+                        response = await client.get(
+                            url="http://web-crawler-server:8000/crawl",
+                            params={"url": url}
+                        )
+                        response.raise_for_status() # Ném lỗi nếu status code không phải 2xx
+
+                        crawler_data = response.json()
+
+                        # Kiểm tra xem crawler có trả về lỗi không
+                        if crawler_data.get("error"):
+                            logger.error(f"Crawler API returned error for {url}: {crawler_data['error']}")
+                            # Có thể quyết định dừng hoặc bỏ qua URL này
+                            continue # Bỏ qua URL lỗi
+
+                        # Lấy nội dung và thêm vào danh sách documents
+                        content = crawler_data.get("content")
+                        if content:
+                            documents.append(content)
+                            logger.info(f"Successfully extracted content for URL: {url} (Length: {len(content)})")
+                        else:
+                            logger.warning(f"No content extracted by crawler for URL: {url}. Message: {crawler_data.get('message')}")
+
+                    except httpx.HTTPStatusError as e:
+                        logger.error(f"HTTP error calling crawler for {url}: Status {e.response.status_code} - {e.response.text}")
+                        # Có thể quyết định dừng hoặc bỏ qua URL này
+                        continue # Bỏ qua URL lỗi
+                    except httpx.RequestError as e:
+                        logger.error(f"Network error calling crawler for {url}: {str(e)}")
+                        # Có thể quyết định dừng hoặc bỏ qua URL này
+                        continue # Bỏ qua URL lỗi
+                    except Exception as e:
+                        logger.error(f"Unexpected error processing URL {url}: {str(e)}")
+                        logger.error(traceback.format_exc())
+                        # Có thể quyết định dừng hoặc bỏ qua URL này
+                        continue # Bỏ qua URL lỗi
+            
+            # Run indexing
+            await run_indexing(temp_files, documents, FAQs, indexing_mode)
+            
+            return IndexingOutput(
+                status="success",
+                message=f"Files uploaded and indexed successfully.",
+                file_count=len(files),
+                indexed_documents=len(documents) + len(FAQs)
+            )
         
-        # Run indexing
-        await run_indexing(temp_files, documents, FAQs, indexing_mode)
-        
-        return IndexingOutput(
-            status="success",
-            message=f"Files uploaded and indexed successfully.",
-            file_count=len(files),
-            indexed_documents=len(documents) + len(FAQs)
-        )
-    
-    except Exception as e:
-        # Clean up temp files in case of error
-        for temp_file in temp_files:
-            try:
-                os.remove(temp_file)
-            except Exception:
-                pass
+        except Exception as e:
+            # Clean up temp files in case of error
+            for temp_file in temp_files:
+                try:
+                    os.remove(temp_file)
+                except Exception:
+                    pass
             
         logger.error(f"Error processing upload: {str(e)}")
         logger.error(traceback.format_exc())

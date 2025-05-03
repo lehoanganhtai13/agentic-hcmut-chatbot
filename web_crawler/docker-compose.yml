@@ -1,0 +1,32 @@
+services:
+  web-crawler-server:
+    hostname: web-crawler-server
+    container_name: web-crawler-server
+    restart: always
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+      tags:
+        - "hcmut-chatbot/web-crawler-server:latest"
+    image: hcmut-chatbot/web-crawler-server:latest
+    ports:
+      - "8005:8000"
+    environment:
+      TOKENIZERS_PARALLELISM: "false"
+      PROMETHEUS_MULTIPROC_DIR: /app/prometheus_multiproc
+      ENVIRONMENT_FILE: /app/environments/.env
+    volumes:
+      - .:/app/web_crawler
+    command: uvicorn web_crawler.server_app:app --host 0.0.0.0 --port 8000 --reload --loop asyncio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+    networks:
+      - chatbot
+
+networks:
+  chatbot:
+    name: chatbot
+    external: true

@@ -7,6 +7,7 @@ FALKORDB_DIR=./database/falkordb
 POSTGRES_DIR=./database/postgres
 LANGFUSE_DIR=./observability/langfuse
 CLICKHOUSE_DIR=./observability/clickhouse
+WEB_CRAWLER_DIR=./web_crawler
 CHATBOT_DIR=./chatbot
 ENVIROMENT_DIR=./environments
 BACKUP_DIR=./database/backup
@@ -55,11 +56,14 @@ up-langfuse:
 	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(LANGFUSE_DIR)/docker-compose.yml up -d
 
 up-build-chatbot:
+	@echo "Building and starting Web Crawler service..."
+	@docker compose -f $(WEB_CRAWLER_DIR)/docker-compose.yml up --build -d
 	@echo "Building and starting Chatbot service..."
-	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml build
-	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml up -d
+	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml up --build -d
 
 up-chatbot:
+	@echo "Starting Web Crawler service..."
+	@docker compose -f $(WEB_CRAWLER_DIR)/docker-compose.yml up -d
 	@echo "Starting Chatbot service..."
 	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml up -d
 
@@ -100,9 +104,13 @@ down-langfuse:
 	@echo "Stopping Langfuse service..."
 	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(LANGFUSE_DIR)/docker-compose.yml down
 
+down-crawler:
+
 down-chatbot:
 	@echo "Stopping Chatbot service..."
 	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml down
+	@echo "Stopping Crawler service..."
+	@docker compose -f $(WEB_CRAWLER_DIR)/docker-compose.yml down
 
 down-db:
 	@echo "Stopping database services..."
