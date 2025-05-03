@@ -19,7 +19,11 @@ The system architecture is implemented based on paper [URAG: Implementing a Unif
 
 The following steps will help you to get the system up and running:
 
-- Create network for the whole system. This will create network `chatbot` and create an `.env` file with the corresponding value of the network subnet:
+- Create an `.env` file from template (adjust settings accordingly):
+    ```bash
+    make setup-env
+    ```
+- Create network for the whole system. This will create network `chatbot` and add to `.env` file with the corresponding value of the network subnet:
     ```bash
     make create-network
     ```

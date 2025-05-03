@@ -142,6 +142,17 @@ remove-network:
 	@echo "Removing NETWORK_SUBNET from $(ENVIROMENT_DIR)/.env..."
 	@sed -i '' '/^NETWORK_SUBNET=/d' $(ENVIROMENT_DIR)/.env
 
+# Target to create .env from template if it doesn't exist
+setup-env:
+	@echo "Checking for $(ENVIROMENT_DIR)/.env file..."
+	@if [ ! -f "$(ENVIROMENT_DIR)/.env" ]; then \
+		echo "$(ENVIROMENT_DIR)/.env not found. Creating from template..."; \
+		cp "$(ENVIROMENT_DIR)/.template.env" "$(ENVIROMENT_DIR)/.env"; \
+		echo "$(ENVIROMENT_DIR)/.env created successfully."; \
+	else \
+		echo "$(ENVIROMENT_DIR)/.env already exists. Skipping creation."; \
+	fi
+
 # Target to setup volumes folder
 setup-volumes: 
 	@$(MAKE) setup-volumes-minio
