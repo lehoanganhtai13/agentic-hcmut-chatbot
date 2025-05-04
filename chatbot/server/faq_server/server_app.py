@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from minio import Minio
 from pydantic import BaseModel
 from fastapi import FastAPI
+from fastapi_mcp import FastApiMCP
 from loguru import logger
 
 from chatbot.config.system_config import SETTINGS
@@ -40,15 +41,28 @@ async def lifespan(app: FastAPI):
     global retriever
     retriever = None
 
+    try:
+        await load() # Initialize the retriever
+    except Exception as e:
+        logger.error(f"Error during startup: {e}")
+        logger.error(traceback.format_exc())
+        return
+    
     yield
     logger.info("Shutting down FAQ Retrieval server...")
     del retriever
 
 
 app = FastAPI(lifespan=lifespan)
+mcp = FastApiMCP(
+    app,
+    name="FAQ Retrieval Tool",
+    description="This is a tool for retrieving relevant FAQs about HCMUT.",
+    include_operations=["retrieve_faq"]
+)
+mcp.mount()
 
 
-@app.post("/load")
 async def load():
     """Load the FAQ retrieval model."""
     global retriever 
@@ -101,7 +115,7 @@ async def load():
         logger.error(traceback.format_exc())
         return {"status": "error", "message": str(e)}
 
-@app.post("/retrieve", response_model=FAQRetrievalOutput)
+@app.post("/retrieve", response_model=FAQRetrievalOutput, operation_id="retrieve_faq", tags=["faq"])
 async def retrieve(request: FAQRetrievalRequest):
     """Retrieve relevant FAQs."""
     try:

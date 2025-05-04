@@ -2,6 +2,7 @@ deep-translator==1.11.4
 docling==2.27.0
 environs==14.1.1
 fastapi==0.115.11
+fastapi-mcp==0.3.3
 future==1.0.0
 geopy==2.4.1
 graspologic==3.4.1

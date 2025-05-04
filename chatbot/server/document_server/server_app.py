@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from minio import Minio
 from pydantic import BaseModel
 from fastapi import FastAPI
+from fastapi_mcp import FastApiMCP
 from loguru import logger
 
 from chatbot.config.system_config import SETTINGS
@@ -39,6 +40,12 @@ class DocumentRetrievalOutput(BaseModel):
 async def lifespan(app: FastAPI):
     global retriever
     retriever = None
+    try:
+        await load()  # Initialize the retriever
+    except Exception as e:
+        logger.error(f"Error during startup: {e}")
+        logger.error(traceback.format_exc())
+        return
 
     yield
     logger.info("Shutting down Document Retrieval server...")
@@ -46,9 +53,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+mcp = FastApiMCP(
+    app,
+    name="Document Retrieval Tool",
+    description="This is a tool for retrieving relevant documents about HCMUT.",
+    include_operations=["retrieve_document"]
+)
+mcp.mount()
 
 
-@app.post("/load")
 async def load():
     """Load the document retrieval model."""
     global retriever
@@ -100,7 +113,7 @@ async def load():
         return {"status": "error", "message": str(e)}
 
 
-@app.post("/retrieve", response_model=DocumentRetrievalOutput)
+@app.post("/retrieve", response_model=DocumentRetrievalOutput, operation_id="retrieve_document", tags=["document"])
 async def retrieve(request: DocumentRetrievalRequest):
     """Retrieve relevant documents."""
     try:
