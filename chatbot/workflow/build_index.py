@@ -149,67 +149,70 @@ class DataIndex:
             faq_collection_name (str): Name of the collection for FAQs.
         """
         # Index documents
-        logger.info(f"Indexing {len(index_data.documents)} documents...")
-        progress_bar = tqdm(index_data.documents, desc="Indexing documents")
+        if index_data.documents:
+            logger.info(f"Indexing {len(index_data.documents)} documents...")
+            progress_bar = tqdm(index_data.documents, desc="Indexing documents")
 
-        # Fit the BM25 client to the documents
-        chunk_sparse_embeddings = self.document_bm25_client.fit_transform(
-            [document.chunk for document in index_data.documents]
-        )
-
-        for idx, document in enumerate(index_data.documents):
-            # Generate dense embeddings for the chunks
-            dense_embedding = self.embedder.get_text_embedding(document.chunk)
-
-            # Index the document into the vector database
-            self.vector_db.insert_vectors(
-                collection_name=document_collection_name,
-                data={
-                    "chunk_id": document.id,
-                    "chunk": document.chunk,
-                    "chunk_dense_embedding": dense_embedding,
-                    "chunk_sparse_embedding": chunk_sparse_embeddings[idx]
-                }
+            # Fit the BM25 client to the documents
+            chunk_sparse_embeddings = self.document_bm25_client.fit_transform(
+                [document.chunk for document in index_data.documents]
             )
 
-            # Update progress bar
-            progress_bar.update(1)
+            for idx, document in enumerate(index_data.documents):
+                # Generate dense embeddings for the chunks
+                dense_embedding = self.embedder.get_text_embedding(document.chunk)
 
-        # Close the progress bar
-        progress_bar.close()
+                # Index the document into the vector database
+                self.vector_db.insert_vectors(
+                    collection_name=document_collection_name,
+                    data={
+                        "chunk_id": document.id,
+                        "chunk": document.chunk,
+                        "chunk_dense_embedding": dense_embedding,
+                        "chunk_sparse_embedding": chunk_sparse_embeddings[idx]
+                    }
+                )
+
+                # Update progress bar
+                progress_bar.update(1)
+
+            # Close the progress bar
+            progress_bar.close()
 
         # Index FAQs
-        logger.info(f"Indexing {len(index_data.faqs)} FAQs...")
-        progress_bar = tqdm(index_data.faqs, desc="Indexing FAQs")
+        if index_data.faqs:
+            logger.info(f"Indexing {len(index_data.faqs)} FAQs...")
+            progress_bar = tqdm(index_data.faqs, desc="Indexing FAQs")
 
-        # Fit the BM25 client to the FAQs
-        faq_sparse_embeddings = self.faq_bm25_client.fit_transform(
-            [faq.question for faq in index_data.faqs]
-        )
-
-        for idx, faq in enumerate(index_data.faqs):
-            # Generate dense embeddings for the FAQ
-            dense_embedding = self.embedder.get_text_embedding(faq.question)
-
-            # Index the FAQ into the vector database
-            self.vector_db.insert_vectors(
-                collection_name=faq_collection_name,
-                data={
-                    "faq_id": faq.id,
-                    "faq": {
-                        "question": faq.question,
-                        "answer": faq.answer
-                    },
-                    "question_dense_embedding": self.embedder.get_text_embedding(faq.question),
-                    "question_sparse_embedding": faq_sparse_embeddings[idx]
-                }
+            # Fit the BM25 client to the FAQs
+            faq_sparse_embeddings = self.faq_bm25_client.fit_transform(
+                [(faq.question + " " + faq.answer) for faq in index_data.faqs]
             )
 
-            # Update progress bar
-            progress_bar.update(1)
+            for idx, faq in enumerate(index_data.faqs):
+                # Generate dense embeddings for the FAQ
+                combined_faq = faq.question + " " + faq.answer
+                dense_embedding = self.embedder.get_text_embedding(combined_faq)
 
-        # Close the progress bar
-        progress_bar.close()
+                # Index the FAQ into the vector database
+                self.vector_db.insert_vectors(
+                    collection_name=faq_collection_name,
+                    data={
+                        "faq_id": faq.id,
+                        "faq": {
+                            "question": faq.question,
+                            "answer": faq.answer
+                        },
+                        "question_dense_embedding": dense_embedding,
+                        "question_sparse_embedding": faq_sparse_embeddings[idx]
+                    }
+                )
+
+                # Update progress bar
+                progress_bar.update(1)
+
+            # Close the progress bar
+            progress_bar.close()
 
         logger.info("Indexing completed.")
 
@@ -257,7 +260,7 @@ class DataIndex:
             chunk_embedding_dict[document.id] = dense_embeddings[idx]
 
         dense_embeddings = self.embedder.get_text_embedding_batch(
-            [faq.question for faq in index_data.faqs]
+            [(faq.question + " " + faq.answer) for faq in index_data.faqs]
         )
         for idx, faq in enumerate(index_data.faqs):
             # Update the dense embedding in the dictionary
@@ -268,7 +271,7 @@ class DataIndex:
         chunk_sparse_embeddings = self.document_bm25_client.fit_transform(
             data=total_chunks
         )
-        total_faqs = [faq.question for faq in index_data.faqs] + [data["faq"]["question"] for data in faq_data]
+        total_faqs = [(faq.question + " " + faq.answer) for faq in index_data.faqs] + [data["faq"]["question"] for data in faq_data]
         faq_sparse_embeddings = self.faq_bm25_client.fit_transform(
             data=total_faqs
         )

@@ -11,13 +11,14 @@ import httpx
 import uvicorn
 from contextlib import asynccontextmanager
 from enum import Enum
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import BackgroundTasks, FastAPI, UploadFile, File, HTTPException
 from minio import Minio
 import pandas as pd
 from pathlib import Path
 from pydantic import BaseModel
 from fastapi import FastAPI
 from loguru import logger
+from tqdm import tqdm
 
 from chatbot.config.system_config import SETTINGS
 from chatbot.core.model_clients import BM25Client
@@ -247,6 +248,7 @@ async def load_weight(files: List[UploadFile] = File(...)):
 
 @app.post("/upload_index", response_model=IndexingOutput)
 async def upload_and_index(
+    background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(default=[]),
     web_urls: List[str] = [],
     indexing_mode: IndexingMode = IndexingMode.FULL_INDEX
@@ -320,51 +322,57 @@ async def upload_and_index(
 
             # Process web URLs
             for url in web_urls:
-                    logger.info(f"Requesting content for URL: {url}")
-                    try:
-                        # Call API of web crawler
-                        response = await client.get(
-                            url="http://web-crawler-server:8000/crawl",
-                            params={"url": url}
-                        )
-                        response.raise_for_status() # Raises an exception if the status code is not 2xx
+                logger.info(f"Requesting content for URL: {url}")
+                try:
+                    # Call API of web crawler
+                    response = await client.get(
+                        url="http://web-crawler-server:8000/crawl",
+                        params={"url": url}
+                    )
+                    response.raise_for_status() # Raises an exception if the status code is not 2xx
 
-                        crawler_data = response.json()
+                    crawler_data = response.json()
 
-                        # Check if the crawler returned an error
-                        if crawler_data.get("error"):
-                            logger.error(f"Crawler API returned error for {url}: {crawler_data['error']}")
-                            # Can decide to stop or skip this URL
-                            continue # Skip URL with error
-
-                        # Get content and add to the documents list
-                        content = crawler_data.get("content")
-                        if content:
-                            documents.append(content)
-                            logger.info(f"Successfully extracted content for URL: {url} (Length: {len(content)})")
-                        else:
-                            logger.warning(f"No content extracted by crawler for URL: {url}. Message: {crawler_data.get('message')}")
-
-                    except httpx.HTTPStatusError as e:
-                        logger.error(f"HTTP error calling crawler for {url}: Status {e.response.status_code} - {e.response.text}")
+                    # Check if the crawler returned an error
+                    if crawler_data.get("error"):
+                        logger.error(f"Crawler API returned error for {url}: {crawler_data['error']}")
                         # Can decide to stop or skip this URL
                         continue # Skip URL with error
-                    except httpx.RequestError as e:
-                        logger.error(f"Network error calling crawler for {url}: {str(e)}")
-                        # Can decide to stop or skip this URL
-                        continue # Skip URL with error
-                    except Exception as e:
-                        logger.error(f"Unexpected error processing URL {url}: {str(e)}")
-                        logger.error(traceback.format_exc())
-                        # Can decide to stop or skip this URL
-                        continue # Skip URL with error
+
+                    # Get content and add to the documents list
+                    content = crawler_data.get("content")
+                    if content:
+                        documents.append(content)
+                        logger.info(f"Successfully extracted content for URL: {url} (Length: {len(content)})")
+                    else:
+                        logger.warning(f"No content extracted by crawler for URL: {url}. Message: {crawler_data.get('message')}")
+
+                except httpx.HTTPStatusError as e:
+                    logger.error(f"HTTP error calling crawler for {url}: Status {e.response.status_code} - {e.response.text}")
+                    # Can decide to stop or skip this URL
+                    continue # Skip URL with error
+                except httpx.RequestError as e:
+                    logger.error(f"Network error calling crawler for {url}: {str(e)}")
+                    # Can decide to stop or skip this URL
+                    continue # Skip URL with error
+                except Exception as e:
+                    logger.error(f"Unexpected error processing URL {url}: {str(e)}")
+                    logger.error(traceback.format_exc())
+                    # Can decide to stop or skip this URL
+                    continue # Skip URL with error
             
-            # Run indexing
-            await run_indexing(temp_files, documents, FAQs, indexing_mode)
+            # Run indexing in the background
+            background_tasks.add_task(
+                run_indexing,
+                temp_files=temp_files,
+                documents=documents,
+                FAQs=FAQs,
+                indexing_mode=indexing_mode
+            )
             
             return IndexingOutput(
                 status="success",
-                message=f"Files uploaded and indexed successfully.",
+                message=f"Files uploaded and indexing started successfully.",
                 file_count=len(files),
                 indexed_documents=len(documents) + len(FAQs)
             )
@@ -413,17 +421,31 @@ async def run_indexing(
                 faq_collection_name=SETTINGS.MILVUS_COLLECTION_FAQ_NAME
             )
             logger.info(f"Inserted {len(documents)} documents, {len(FAQs)} FAQs into the index")
-
-        # Clean up temp files
-        for temp_file in temp_files:
-            try:
-                os.remove(temp_file)
-            except Exception as e:
-                logger.warning(f"Failed to remove temp file {temp_file}: {str(e)}")
                 
     except Exception as e:
         logger.error(f"Error during indexing: {str(e)}")
         logger.error(traceback.format_exc())
+    finally:
+        # Clean up temp files
+        await cleanup_temp_files(temp_files)
+
+async def cleanup_temp_files(temp_files: List[str]):
+    """Asynchronously removes temporary files."""
+    logger.info(f"Cleaning up {len(temp_files)} temporary files...")
+    progress_bar = tqdm(total=len(temp_files), desc="Cleaning up temp files", unit="file")
+    for temp_file in temp_files:
+        try:
+            exists = await asyncio.to_thread(os.path.exists, temp_file)
+            if exists:
+                await asyncio.to_thread(os.remove, temp_file)
+                progress_bar.update(1)
+            else:
+                logger.warning(f"Temp file not found for removal: {temp_file}")
+        except Exception as e:
+            logger.warning(f"Failed to remove temp file {temp_file}: {str(e)}")
+
+    progress_bar.close()
+    logger.info("Temporary file cleanup finished.")
 
 
 if __name__ == "__main__":

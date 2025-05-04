@@ -13,7 +13,7 @@ class FaqAugmenter:
     A class that augments FAQ documents by generating additional FAQs based on existing ones.
     
     This class processes FAQ documents to create new FAQ pairs by paraphrasing or rephrasing
-    existing questions and answers, enhancing the diversity and coverage of the FAQ content.
+    existing questions, enhancing the diversity and coverage of the FAQ content.
     
     Attributes:
         llm (LLMCore): The language model used for FAQ augmentation.

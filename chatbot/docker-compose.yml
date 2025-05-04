@@ -70,7 +70,7 @@ services:
       - ./.data/prometheus_multiproc:/app/prometheus_multiproc
       - ./../environments:/app/environments:ro
       - .:/app/chatbot
-    command: uvicorn chatbot.server.index_server.server_app:app --host 0.0.0.0 --port 8000 --loop asyncio
+    command: uvicorn chatbot.server.index_server.server_app:app --host 0.0.0.0 --port 8000 --loop asyncio --workers 3
     networks:
       - chatbot
 
