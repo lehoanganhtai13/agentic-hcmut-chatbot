@@ -6,6 +6,7 @@ import traceback
 import uuid
 from typing import List
 
+import asyncio
 import httpx
 import uvicorn
 from contextlib import asynccontextmanager
@@ -321,22 +322,22 @@ async def upload_and_index(
             for url in web_urls:
                     logger.info(f"Requesting content for URL: {url}")
                     try:
-                        # Gọi API của web crawler
+                        # Call API of web crawler
                         response = await client.get(
                             url="http://web-crawler-server:8000/crawl",
                             params={"url": url}
                         )
-                        response.raise_for_status() # Ném lỗi nếu status code không phải 2xx
+                        response.raise_for_status() # Raises an exception if the status code is not 2xx
 
                         crawler_data = response.json()
 
-                        # Kiểm tra xem crawler có trả về lỗi không
+                        # Check if the crawler returned an error
                         if crawler_data.get("error"):
                             logger.error(f"Crawler API returned error for {url}: {crawler_data['error']}")
-                            # Có thể quyết định dừng hoặc bỏ qua URL này
-                            continue # Bỏ qua URL lỗi
+                            # Can decide to stop or skip this URL
+                            continue # Skip URL with error
 
-                        # Lấy nội dung và thêm vào danh sách documents
+                        # Get content and add to the documents list
                         content = crawler_data.get("content")
                         if content:
                             documents.append(content)
@@ -346,17 +347,17 @@ async def upload_and_index(
 
                     except httpx.HTTPStatusError as e:
                         logger.error(f"HTTP error calling crawler for {url}: Status {e.response.status_code} - {e.response.text}")
-                        # Có thể quyết định dừng hoặc bỏ qua URL này
-                        continue # Bỏ qua URL lỗi
+                        # Can decide to stop or skip this URL
+                        continue # Skip URL with error
                     except httpx.RequestError as e:
                         logger.error(f"Network error calling crawler for {url}: {str(e)}")
-                        # Có thể quyết định dừng hoặc bỏ qua URL này
-                        continue # Bỏ qua URL lỗi
+                        # Can decide to stop or skip this URL
+                        continue # Skip URL with error
                     except Exception as e:
                         logger.error(f"Unexpected error processing URL {url}: {str(e)}")
                         logger.error(traceback.format_exc())
-                        # Có thể quyết định dừng hoặc bỏ qua URL này
-                        continue # Bỏ qua URL lỗi
+                        # Can decide to stop or skip this URL
+                        continue # Skip URL with error
             
             # Run indexing
             await run_indexing(temp_files, documents, FAQs, indexing_mode)
@@ -386,9 +387,17 @@ async def run_indexing(
     FAQs: List[FAQDocument] = [],
     indexing_mode: IndexingMode = IndexingMode.FULL_INDEX
 ):
+    global indexer # Ensure the index is loaded
+    if indexer is None:
+        logger.error("Indexer is not loaded. Please call /load or /load_weight first.")
+        # Don't raise HTTPException here as it's not a direct endpoint
+        # Instead, the calling function (upload_and_index) will catch the error if needed
+        raise ValueError("Indexer not loaded")
+    
     try:
         if indexing_mode == IndexingMode.FULL_INDEX:
-            result = indexer.run_index(
+            result = await asyncio.to_thread( # Run in a separate thread to avoid blocking
+                indexer.run_index,
                 documents=documents,
                 faqs=FAQs,
                 document_collection_name=SETTINGS.MILVUS_COLLECTION_DOCUMENT_NAME,
@@ -396,7 +405,8 @@ async def run_indexing(
             )
             logger.info(f"Indexing completed successfully: {len(documents)} documents, {len(FAQs)} FAQs")
         elif indexing_mode == IndexingMode.INSERT:
-            result = indexer.run_insert(
+            result = await asyncio.to_thread( # Run in a separate thread to avoid blocking
+                indexer.run_insert,
                 documents=documents,
                 faqs=FAQs,
                 document_collection_name=SETTINGS.MILVUS_COLLECTION_DOCUMENT_NAME,
