@@ -5,7 +5,7 @@ import uvicorn
 import traceback
 from contextlib import asynccontextmanager
 from minio import Minio
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi import FastAPI
 from fastapi_mcp import FastApiMCP
 from loguru import logger
@@ -22,16 +22,15 @@ from chatbot.utils.database_clients import VectorDatabase
 
 class FAQRetrievalRequest(BaseModel):
     """Class to store FAQ retrieval request data."""
-    query: str
-    top_k: int = 2
+    query: str = Field(..., description="The query string for FAQ retrieval.")
+    top_k: int = Field(2, description="The number of top FAQs to retrieve.")
 
 
 class FAQRetrievalOutput(BaseModel):
     """Class to store FAQ retrieval response data."""
-
-    status: str
-    results: Optional[FAQRetrievalResult] = None
-    message: Optional[str] = None
+    status: str = Field(..., description="The status of the retrieval operation.")
+    results: Optional[FAQRetrievalResult] = Field(None, description="The retrieved FAQs.")
+    message: Optional[str] = Field(None, description="An error message if the operation failed.")
 
 
 # ------------------- Server API -------------------
@@ -117,7 +116,7 @@ async def load():
 
 @app.post("/retrieve", response_model=FAQRetrievalOutput, operation_id="retrieve_faq", tags=["faq"])
 async def retrieve(request: FAQRetrievalRequest):
-    """Retrieve relevant FAQs."""
+    """Retrieve top K relevant FAQs based on the query."""
     try:
         # Retrieve relevant FAQs
         results = retriever.retrieve_faqs(

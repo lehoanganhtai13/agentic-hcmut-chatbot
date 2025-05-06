@@ -5,7 +5,7 @@ import uvicorn
 import traceback
 from contextlib import asynccontextmanager
 from minio import Minio
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi import FastAPI
 from fastapi_mcp import FastApiMCP
 from loguru import logger
@@ -13,8 +13,8 @@ from loguru import logger
 from chatbot.config.system_config import SETTINGS
 from chatbot.core.model_clients import BM25Client
 from chatbot.core.model_clients.load_model import init_embedder
-from chatbot.core.retriever import DocumentRetriever, FAQRetriever
-from chatbot.core.retriever.base_class import DocumentRetrievalResult, FAQRetrievalResult
+from chatbot.core.retriever import DocumentRetriever
+from chatbot.core.retriever.base_class import DocumentRetrievalResult
 from chatbot.utils.base_class import ModelsConfig
 from chatbot.utils.database_clients import VectorDatabase
 
@@ -22,16 +22,15 @@ from chatbot.utils.database_clients import VectorDatabase
 
 class DocumentRetrievalRequest(BaseModel):
     """Class to store document retrieval request data."""
-    query: str
-    top_k: int = 2
+    query: str = Field(..., description="The query string for document retrieval.")
+    top_k: int = Field(2, description="The number of top documents to retrieve.")
 
 
 class DocumentRetrievalOutput(BaseModel):
     """Class to store document retrieval response data."""
-
-    status: str
-    results: Optional[DocumentRetrievalResult] = None
-    message: Optional[str] = None
+    status: str = Field(..., description="The status of the retrieval operation.")
+    results: Optional[DocumentRetrievalResult] = Field(None, description="The retrieved documents.")
+    message: Optional[str] = Field(None, description="An error message if the operation failed.")
 
 
 # ------------------- Server API -------------------
@@ -115,7 +114,7 @@ async def load():
 
 @app.post("/retrieve", response_model=DocumentRetrievalOutput, operation_id="retrieve_document", tags=["document"])
 async def retrieve(request: DocumentRetrievalRequest):
-    """Retrieve relevant documents."""
+    """Retrieve top K relevant documents based on the query."""
     try:
         # Retrieve relevant documents
         results = retriever.retrieve_documents(

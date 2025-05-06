@@ -5,15 +5,16 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY ./server/requirements.txt .
-
 RUN apt-get update && \
     apt-get install -y --no-install-recommends iputils-ping && \
     apt-get clean
 
 RUN pip install --upgrade pip
+
+COPY ./server/requirements.txt .
 RUN pip install -r requirements.txt --no-cache-dir
 RUN pip install 'uvicorn[standard]'
+# RUN pip install docling==2.31.0
 
 COPY ./config /app/chatbot/config
 COPY ./core /app/chatbot/core
