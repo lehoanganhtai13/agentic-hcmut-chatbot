@@ -1,13 +1,11 @@
 from typing import Optional
 
 import json
-import uvicorn
 import traceback
 from contextlib import asynccontextmanager
 from minio import Minio
 from pydantic import BaseModel, Field
-from fastapi import FastAPI
-from fastapi_mcp import FastApiMCP
+from fastmcp import FastMCP
 from loguru import logger
 
 from chatbot.config.system_config import SETTINGS
@@ -20,12 +18,6 @@ from chatbot.utils.database_clients import VectorDatabase
 
 # ------------------- Global Model Classes -------------------
 
-class DocumentRetrievalRequest(BaseModel):
-    """Class to store document retrieval request data."""
-    query: str = Field(..., description="The query string for document retrieval.")
-    top_k: int = Field(2, description="The number of top documents to retrieve.")
-
-
 class DocumentRetrievalOutput(BaseModel):
     """Class to store document retrieval response data."""
     status: str = Field(..., description="The status of the retrieval operation.")
@@ -33,33 +25,7 @@ class DocumentRetrievalOutput(BaseModel):
     message: Optional[str] = Field(None, description="An error message if the operation failed.")
 
 
-# ------------------- Server API -------------------
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global retriever
-    retriever = None
-    try:
-        await load()  # Initialize the retriever
-    except Exception as e:
-        logger.error(f"Error during startup: {e}")
-        logger.error(traceback.format_exc())
-        return
-
-    yield
-    logger.info("Shutting down Document Retrieval server...")
-    del retriever
-
-
-app = FastAPI(lifespan=lifespan)
-mcp = FastApiMCP(
-    app,
-    name="Document Retrieval Tool",
-    description="This is a tool for retrieving relevant documents about HCMUT.",
-    include_operations=["retrieve_document"]
-)
-mcp.mount()
-
+# -------------------Init Server API -------------------
 
 async def load():
     """Load the document retrieval model."""
@@ -111,23 +77,73 @@ async def load():
         logger.error(traceback.format_exc())
         return {"status": "error", "message": str(e)}
 
+@asynccontextmanager
+async def lifespan(app: FastMCP):
+    global retriever
+    retriever = None
+    try:
+        await load()  # Initialize the retriever
+    except Exception as e:
+        logger.error(f"Error during startup: {e}")
+        logger.error(traceback.format_exc())
+        return
 
-@app.post("/retrieve", response_model=DocumentRetrievalOutput, operation_id="retrieve_document", tags=["document"])
-async def retrieve(request: DocumentRetrievalRequest):
-    """Retrieve top K relevant documents based on the query."""
+    yield
+    logger.info("Shutting down Document Retrieval server...")
+    del retriever
+
+
+mcp = FastMCP(
+    name="Document Retrieval Server",
+    lifespan=lifespan,
+    instructions="This is a server for retrieving relevant documents about HCMUT.",
+    tags=["document"]
+)
+
+# ------------------- API Endpoints -------------------
+
+
+@mcp.tool(
+    name="faq_document_tool",
+    description="Retrieve top K relevant documents based on the query.",
+    tags=["document"]
+)
+async def retrieve(
+    query: str = Field(..., description="The query string for document retrieval."),
+    top_k: int = Field(5, description="The number of top documents to retrieve.")
+):
     try:
         # Retrieve relevant documents
         results = retriever.retrieve_documents(
-            query=request.query,
-            top_k=request.top_k
+            query=query,
+            top_k=top_k
         )
         return DocumentRetrievalOutput(status="success", results=results)
     except Exception as e:
         logger.error(f"Error retrieving relevant documents: {e}")
         logger.error(traceback.format_exc())
         return DocumentRetrievalOutput(status="error", message=str(e))
+    
+# ------------------- MCP Server Check -------------------
 
+async def check_mcp(mcp: FastMCP):
+    # List the components that were created
+    tools = await mcp.get_tools()
+    resources = await mcp.get_resources()
+    templates = await mcp.get_resource_templates()
+
+    data_log = f"""
+    Tools: {len(tools)} Tool(s): {', '.join([t.name for t in tools.values()])}
+    Resources: {len(resources)} Resource(s): {', '.join([r.name for r in resources.values()])}
+    Templates: {len(templates)} Resource Template(s): {', '.join([t.name for t in templates.values()])}
+    """
+    logger.info(data_log)
 
 if __name__ == "__main__":
-    # Start the FastAPI server
-    uvicorn.run("chatbot.document_server.server_app:app", host="0.0.0.0", port=8000)
+    import asyncio
+
+    # Run quick check on the MCP server
+    asyncio.run(check_mcp(mcp))
+
+    # Start the FastMCP server
+    mcp.run(transport="sse", host="0.0.0.0", port=8000)

@@ -13,7 +13,7 @@ RUN pip install --upgrade pip
 
 COPY ./server/requirements.txt .
 RUN pip install -r requirements.txt --no-cache-dir
-RUN pip install 'uvicorn[standard]'
+RUN pip install fastmcp
 
 COPY ./config /app/chatbot/config
 COPY ./core /app/chatbot/core
