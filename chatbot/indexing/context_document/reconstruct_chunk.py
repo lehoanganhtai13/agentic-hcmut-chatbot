@@ -3,6 +3,8 @@ import uuid
 from typing import List
 from tqdm.auto import tqdm
 
+from loguru import logger
+
 from chatbot.core.model_clients import LLMCore
 from chatbot.indexing.context_document.base_class import ExtractedContext, ReconstructedChunk
 from chatbot.prompts.indexing.generate_title import GENERATE_TITLE_QUICK_DESCRIPTION_PROMPT_TEMPLATE
@@ -83,24 +85,58 @@ class ChunkReconstructor:
 
         Args:
             chunk (str): Chunk to rewrite.
-            context (ExtractedContext): Context usd to rewrite the chunk.
+            context (ExtractedContext): Context used to rewrite the chunk.
 
         Returns:
             rewritten_chunk (str): Rewritten chunk.
         """
-        response = self.llm.complete(
-            prompt=REWRITE_TEXT_CHUNK_PROMPT_TEMPLATE.format(
-                text_chunk=chunk,
-                context=context.context,
-                max_tokens=self.llm.max_new_tokens
-            )
-        ).text
+        max_tries = 3
+        for _ in range(max_tries):
+            try:
+                response = self.llm.complete(
+                    prompt=REWRITE_TEXT_CHUNK_PROMPT_TEMPLATE.format(
+                        text_chunk=chunk,
+                        context=context.context,
+                        max_tokens=self.llm.max_new_tokens
+                    )
+                ).text
 
-        if response.startswith("```json"):
-            response = response.replace("```json", "").replace("```", "")
-
-        rewritten_chunk = json.loads(response)["rewritten_chunk"]
-        return rewritten_chunk
+                if response.startswith("```json"):
+                    response = response.replace("```json", "").replace("```", "")
+                
+                # Handle incomplete JSON
+                try:
+                    # Try parsing JSON normally first
+                    rewritten_chunk = json.loads(response)["rewritten_chunk"]
+                    return rewritten_chunk
+                except json.JSONDecodeError:
+                    # If JSON is invalid, perform additional processing
+                    if '"rewritten_chunk"' in response:
+                        # Find content after "rewritten_chunk":
+                        content_start = response.find('"rewritten_chunk"') + len('"rewritten_chunk"')
+                        # Find position of colon after "rewritten_chunk"
+                        colon_pos = response.find(":", content_start)
+                        if colon_pos != -1:
+                            content_start = colon_pos + 1
+                            # Skip whitespace and quotation marks
+                            while content_start < len(response) and response[content_start] in [' ', '"']:
+                                content_start += 1
+                            # Get content from there to the end
+                            content = response[content_start:].strip()
+                            # Remove quotation mark at the end if present
+                            if content.endswith('"'):
+                                content = content[:-1]
+                            return content
+                    
+                    # If "rewritten_chunk" not found, return the original chunk
+                    logger.error("Invalid JSON response, unable to find 'rewritten_chunk' key.")
+                    return chunk
+                
+            except Exception as e:
+                logger.error(f"Error rewriting chunk: {response}")
+        
+        logger.error(f"Failed to rewrite chunk after {max_tries} attempts!!!")
+        return chunk  # Return the original chunk if all attempts fail
     
     def generate_title_quick_description(self, rewritten_chunk: str) -> str:
         """
@@ -112,22 +148,30 @@ class ChunkReconstructor:
         Returns:
             title_or_quick_description (str): Title or quick description.
         """
-        response = self.llm.complete(
-            prompt=GENERATE_TITLE_QUICK_DESCRIPTION_PROMPT_TEMPLATE.format(
-                rewritten_chunk=rewritten_chunk
-            )
-        ).text
+        max_tries = 3
+        for _ in range(max_tries):
+            try:
+                response = self.llm.complete(
+                    prompt=GENERATE_TITLE_QUICK_DESCRIPTION_PROMPT_TEMPLATE.format(
+                        rewritten_chunk=rewritten_chunk
+                    )
+                ).text
 
-        if response.startswith("```json"):
-            response = response.replace("```json", "").replace("```", "")
+                if response.startswith("```json"):
+                    response = response.replace("```json", "").replace("```", "")
 
-        title_or_quick_description = json.loads(response)["title_or_quick_description"]
+                title_or_quick_description = json.loads(response)["title_or_quick_description"]
 
-        # Remove trailing period
-        if title_or_quick_description.endswith("."):
-            title_or_quick_description = title_or_quick_description[:-1]
+                # Remove trailing period
+                if title_or_quick_description.endswith("."):
+                    title_or_quick_description = title_or_quick_description[:-1]
 
-        return title_or_quick_description
+                return title_or_quick_description
+            except Exception as e:
+                logger.error("Error generating title or quick description!!!")
+
+        logger.error(f"Failed to generate title or quick description after {max_tries} attempts!!!")
+        return rewritten_chunk
     
     def combine_title_and_chunk(self, title: str, chunk: str) -> str:
         """

@@ -1,5 +1,7 @@
 import json
+import re
 import uuid
+from loguru import logger
 from typing import List
 from tqdm.auto import tqdm
 
@@ -50,20 +52,31 @@ class FaqAugmenter:
         
         # Iterate through each FAQ document
         for document in documents:
-            # Generate new Questions based on the existing the original FAQ pair
-            response = self.llm.complete(
-                prompt=FAQ_PARAPHRASE_PROMPT_TEMPLATE.format(
-                    faq_pair={"question": document.question, "answer": document.answer},
-                    max_paraphrases=max_pairs
-                )
-            ).text
-            
-            if response.startswith("```json"):
-                response = response.replace("```json", "").replace("```", "")
-            
-            # Parse the JSON response
-            list_new_question = json.loads(response)
-            
+            try:
+                # Generate new Questions based on the existing the original FAQ pair
+                response = self.llm.complete(
+                    prompt=FAQ_PARAPHRASE_PROMPT_TEMPLATE.format(
+                        faq_pair={"question": document.question, "answer": document.answer},
+                        max_paraphrases=max_pairs
+                    )
+                ).text
+                
+                if response.startswith("```json"):
+                    response = response.replace("```json", "").replace("```", "")
+
+                # Clean JSON to handle trailing commas
+                response = re.sub(r",\s*}", "}", response)
+                response = re.sub(r",\s*]", "]", response)
+                
+                # Parse the JSON response
+                list_new_question = json.loads(response)
+                
+                # Update progress bar
+                progress_bar.update(1)
+            except Exception as e:
+                logger.error(f"Error processing document {document.id}: {response}")
+                continue
+                
             # Add new FAQ pairs to the list
             for new_question in list_new_question:
                 augmented_faqs.append(FAQDocument(
@@ -71,9 +84,6 @@ class FaqAugmenter:
                     question=new_question["paraphrased_question"],
                     answer=document.answer
                 ))
-            
-            # Update progress bar
-            progress_bar.update(1)
         
         # Close the progress bar
         progress_bar.close()

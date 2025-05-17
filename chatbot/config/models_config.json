@@ -4,7 +4,7 @@
             "model_id": "gemini-2.0-flash",
             "provider": "gemini",
             "temperature": 0.0,
-            "max_new_tokens": 2000,
+            "max_new_tokens": 4000,
             "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
             "is_chat": false,
             "use_websocket": false

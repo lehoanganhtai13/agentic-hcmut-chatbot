@@ -115,27 +115,36 @@ async def load(
         if mode == InitializationMode.NEW:
             logger.info("Initializing new indexer model...")
 
-            # Initialize new BM25 models
-            document_bm25_client = BM25Client(
-                storage=minio_client,
-                bucket_name=SETTINGS.MINIO_BUCKET_DOCUMENT_INDEX_NAME,
-                overwrite_minio_bucket=True
-            )
-            faq_bm25_client = BM25Client(
-                storage=minio_client,
-                bucket_name=SETTINGS.MINIO_BUCKET_FAQ_INDEX_NAME,
-                overwrite_minio_bucket=True
-            )
+            try:
+                # Initialize new BM25 models
+                document_bm25_client = BM25Client(
+                    storage=minio_client,
+                    bucket_name=SETTINGS.MINIO_BUCKET_DOCUMENT_INDEX_NAME,
+                    overwrite_minio_bucket=True
+                )
+                faq_bm25_client = BM25Client(
+                    storage=minio_client,
+                    bucket_name=SETTINGS.MINIO_BUCKET_FAQ_INDEX_NAME,
+                    overwrite_minio_bucket=True
+                )
 
-            # Initialize a new indexer model
-            indexer = DataIndex(
-                llm=llm,
-                embedder=embedder,
-                document_bm25_client=document_bm25_client,
-                faq_bm25_client=faq_bm25_client,
-                preprocessing_config=preprocessing_config,
-                vector_db=vector_db
-            )
+                # Initialize a new indexer model
+                loaded_indexer = DataIndex(
+                    llm=llm,
+                    embedder=embedder,
+                    document_bm25_client=document_bm25_client,
+                    faq_bm25_client=faq_bm25_client,
+                    preprocessing_config=preprocessing_config,
+                    vector_db=vector_db
+                )
+            except Exception as e:
+                logger.error(f"Error initializing new indexer model: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Failed to initialize new indexer: {str(e)}")
+            
+            indexer = loaded_indexer
+            logger.info("New indexer model initialized successfully.")
+            
+            # Return success response
             return {"status": "success", "message": "New indexer model initialized."}
         
         elif mode == InitializationMode.LOAD_EXISTING:
