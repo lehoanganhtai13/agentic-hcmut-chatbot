@@ -6,8 +6,8 @@ from chatbot.core.retriever.base_class import (
     DocumentRetrievalResult
 )
 from chatbot.core.retriever.base_retriever import BaseHybridRetriever
-from chatbot.core.model_clients import BM25Client, EmbedderCore
-from chatbot.utils.database_clients import VectorDatabase
+from chatbot.core.model_clients import BM25Client, BaseEmbedder
+from chatbot.utils.database_clients import BaseVectorDatabase
 
 
 class DocumentRetriever(BaseHybridRetriever):
@@ -25,9 +25,9 @@ class DocumentRetriever(BaseHybridRetriever):
     def __init__(
         self,
         collection_name: str,
-        embedder: EmbedderCore,
+        embedder: BaseEmbedder,
         bm25_client: BM25Client,
-        vector_db: VectorDatabase
+        vector_db: BaseVectorDatabase
     ):
         super().__init__(collection_name, embedder, bm25_client, vector_db)
         self.embedding_fields = {
@@ -60,10 +60,10 @@ class DocumentRetriever(BaseHybridRetriever):
             documents=[
                 RetrievedDocument(
                     source_node=DocumentNode(
-                        id=result["entity"]["chunk_id"],
-                        chunk=result["entity"]["chunk"]
+                        id=result["chunk_id"],
+                        chunk=result["chunk"]
                     ),
-                    score=result.get("distance", 0.0)
+                    score=result.get("_score", 0.0)
                 ) for result in results
             ]
         )
@@ -84,8 +84,9 @@ if __name__ == "__main__":
     from minio import Minio
 
     from chatbot.config.system_config import SETTINGS
-    from chatbot.core.model_clients.load_model import init_embedder
+    from chatbot.core.model_clients.embedder.openai import OpenAIClientConfig, OpenAIEmbedder
     from chatbot.utils.base_class import ModelsConfig
+    from chatbot.utils.database_clients.milvus import MilvusVectorDatabase, MilvusConfig
 
     # Example usage
     models_config = {}
@@ -94,10 +95,13 @@ if __name__ == "__main__":
         models_config = json.load(f)
 
         # Convert the loaded JSON to a ModelsConfig object
-        models_config = ModelsConfig.from_dict(models_config)
+        embedder_config = ModelsConfig.from_dict(models_config).embedding_config
 
     # Initialize the embedder
-    embedder = init_embedder(models_conf=models_config)
+    embedder = OpenAIEmbedder(config=OpenAIClientConfig(
+        api_key=SETTINGS.OPENAI_API_KEY,
+        model=embedder_config.model_id
+    ))
 
     # Initialize the MinIO client for loading BM25 state dicts
     minio_client = Minio(
@@ -114,10 +118,12 @@ if __name__ == "__main__":
     )
 
     # Initialize the vector database client
-    vector_db = VectorDatabase(
-        host="localhost",
-        port=19530,
-        run_async=False
+    vector_db = MilvusVectorDatabase(
+        config=MilvusConfig(
+            host="localhost",
+            port=19530,
+            run_async=False
+        )
     )
     
     retriever = DocumentRetriever(

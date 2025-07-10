@@ -30,16 +30,14 @@ class LLMConfig(BaseModel):
         base_url (str): The base URL for the model.
         max_new_tokens (int): The maximum number of new tokens.
         temperature (float): The temperature for the model.
-        is_chat (bool): Whether the model is a chat model or not.
-        use_websocket (bool): Whether to use WebSocket or not.
+        thinking_mode (bool): Whether the model is in thinking mode (default is False).
     """
     model_id: str
     provider: str
     base_url: str
     max_new_tokens: int
     temperature: float
-    is_chat: bool
-    use_websocket: bool
+    thinking_mode: bool = False
 
 
 class EmbeddingConfig(BaseModel):

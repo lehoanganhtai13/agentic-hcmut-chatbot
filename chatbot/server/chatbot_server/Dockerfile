@@ -5,22 +5,14 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY ./server/requirements.txt .
-
 RUN apt-get update && \
     apt-get install -y --no-install-recommends iputils-ping && \
     apt-get clean
 
 RUN pip install --upgrade pip
-RUN pip install -r requirements.txt --no-cache-dir
-RUN pip install 'uvicorn[standard]'
+RUN pip install uv
+RUN uv pip install --no-cache-dir --system google-adk==1.6.1
 
-COPY ./config /app/chatbot/config
-COPY ./core /app/chatbot/core
-COPY ./indexing /app/chatbot/indexing
-COPY ./prompts /app/chatbot/prompts
-COPY ./utils /app/chatbot/utils
-COPY ./workflow /app/chatbot/workflow
-COPY ./server/chatbot_server /app/chatbot/server/chatbot_server
+COPY ./core/. /app/
 
 EXPOSE 8000

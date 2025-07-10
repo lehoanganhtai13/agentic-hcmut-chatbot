@@ -2,7 +2,7 @@ from loguru import logger
 from tqdm import tqdm
 from typing import List
 
-from chatbot.core.model_clients import EmbedderCore, LLMCore
+from chatbot.core.model_clients import BaseEmbedder, BaseLLM
 from chatbot.indexing.context_document.base_class import PreprocessingConfig, ReconstructedChunk
 from chatbot.indexing.context_document.extract_context import ContextExtractor
 from chatbot.indexing.context_document.reconstruct_chunk import ChunkReconstructor
@@ -12,19 +12,20 @@ from chatbot.indexing.context_document.semantic_chunk import SemanticChunker
 class ContextDocumentIndexer:
     def __init__(
         self,
-        llm: LLMCore,
-        embedder: EmbedderCore,
+        llm: BaseLLM,
+        embedder: BaseEmbedder,
         preprocessing_config: PreprocessingConfig,
-        similarity_percentile_threshold: int = 90
+        breakpoint_percentile_threshold: int = 95
     ):
         """
         Initialize the ContextDocumentIndexer. This class indexes documents into smaller parts based on semantic similarity.
 
         Attributes:
-            llm (LLMCore): Language model used for context extraction.
-            embedder (EmbedderCore): Embedder model to embed the documents.
+            llm (BaseLLM): Language model used for context extraction.
+            embedder (BaseEmbedder): Embedder model to embed the documents.
             preprocessing_config (PreprocessingConfig): Configuration for preprocessing text.
-            similarity_percentile_threshold (int): Percentile threshold for semantic similarity.
+            breakpoint_percentile_threshold (int): Percentile threshold for identifying semantic breakpoints.
+                Lower values create more chunks.
         """
         self.llm = llm
         self.embedder = embedder
@@ -32,7 +33,7 @@ class ContextDocumentIndexer:
         self.semantic_chunker = SemanticChunker(
             embedder=embedder,
             preprocessing_config=preprocessing_config,
-            similarity_percentile_threshold=similarity_percentile_threshold
+            breakpoint_percentile_threshold=breakpoint_percentile_threshold
         )
         self.context_extractor = ContextExtractor(llm)
         self.chunk_reconstructor = ChunkReconstructor(llm)
@@ -71,3 +72,4 @@ class ContextDocumentIndexer:
         progress_bar.close()
 
         return indexed_documents
+    

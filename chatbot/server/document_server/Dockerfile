@@ -7,13 +7,25 @@ WORKDIR /app
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends iputils-ping && \
+    apt-get install -y curl && \
     apt-get clean
 
 RUN pip install --upgrade pip
 
 COPY ./server/requirements.txt .
-RUN pip install -r requirements.txt --no-cache-dir
-RUN pip install fastmcp
+RUN pip install uv
+RUN uv pip install --system --no-cache-dir -r requirements.txt \
+    && uv pip install --system --no-cache-dir 'nltk>=3.9.1' \
+    && uv pip install --system --no-cache-dir fastmcp==2.10.2
+
+ENV NLTK_DATA=/usr/local/share/nltk_data
+RUN python - <<'PY'
+import nltk, os, pathlib
+dst=os.environ["NLTK_DATA"]; pathlib.Path(dst).mkdir(parents=True, exist_ok=True)
+nltk.download('punkt', download_dir=dst, quiet=True)
+nltk.download('punkt_tab', download_dir=dst, quiet=True)
+nltk.download('stopwords', download_dir=dst, quiet=True)
+PY
 
 COPY ./config /app/chatbot/config
 COPY ./core /app/chatbot/core

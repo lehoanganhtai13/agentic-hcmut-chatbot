@@ -21,6 +21,11 @@ services:
       - ./../environments:/app/environments:ro
       - .:/app/chatbot
     command: python -m chatbot.server.document_server.server_app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
     networks:
       - chatbot
     
@@ -46,6 +51,11 @@ services:
       - ./../environments:/app/environments:ro
       - .:/app/chatbot
     command: python -m chatbot.server.faq_server.server_app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
     networks:
       - chatbot
       
@@ -70,7 +80,35 @@ services:
       - ./.data/prometheus_multiproc:/app/prometheus_multiproc
       - ./../environments:/app/environments:ro
       - .:/app/chatbot
-    command: uvicorn chatbot.server.index_server.server_app:app --host 0.0.0.0 --port 8000 --loop asyncio --workers 3
+    command: uvicorn chatbot.server.index_server.server_app:app --host 0.0.0.0 --port 8000 --loop asyncio --reload --workers 1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+    networks:
+      - chatbot
+
+  chatbot-server:
+    hostname: chatbot-server
+    container_name: chatbot-server
+    restart: always
+    build:
+      context: .
+      dockerfile: ./server/chatbot_server/Dockerfile
+      tags:
+        - "hcmut-chatbot/chatbot-server:latest"
+    image: hcmut-chatbot/chatbot-server:latest
+    ports:
+      - "8010:8010"
+    environment:
+      GOOGLE_API_KEY: ${GEMINI_API_KEY}
+    command: ["adk", "web", "--port", "8010", "--host", "0.0.0.0"]
+    depends_on:
+      document-server:
+        condition: service_healthy
+      faq-server:
+        condition: service_healthy
     networks:
       - chatbot
 

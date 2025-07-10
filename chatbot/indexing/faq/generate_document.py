@@ -3,7 +3,7 @@ import uuid
 from typing import Dict, List
 from tqdm.auto import tqdm
 
-from chatbot.core.model_clients import LLMCore
+from chatbot.core.model_clients import BaseLLM
 from chatbot.indexing.context_document.base_class import ReconstructedChunk
 from chatbot.indexing.faq.base_class import FAQDocument
 from chatbot.prompts.indexing.generate_faq import FAQ_GENERATION_PROMPT_TEMPLATE
@@ -22,18 +22,18 @@ class FaqGenerator:
     that is more accessible and directly addresses potential user queries.
     
     Attributes:
-        llm (LLMCore): The language model used for FAQ generation.
+        llm (BaseLLM): The language model used for FAQ generation.
     
     Methods:
         generate_faq: Process reconstructed chunks to create FAQ pairs.
     
     Example:
-        >>> llm = LLMCore()
+        >>> llm = BaseLLM()
         >>> chunks = [ReconstructedChunk(document="doc1", chunk="Information about admissions")]
         >>> generator = FaqGenerator(llm)
         >>> faq_documents = generator.generate_faq(chunks, max_pairs=5)
     """
-    def __init__(self, llm: LLMCore):
+    def __init__(self, llm: BaseLLM):
         self.llm = llm
 
     def generate_faq(

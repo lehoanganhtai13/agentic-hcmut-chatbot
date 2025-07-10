@@ -7,10 +7,12 @@ __pycache__/
 *.so
 
 # Data and cache
-data/
+chatbot/data/*
 .data/
 cache/
 backup/
+
+!chatbot/data/bm25/
 
 # service logs
 logs/

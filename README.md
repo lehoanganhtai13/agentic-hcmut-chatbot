@@ -23,82 +23,29 @@ The following steps will help you to get the system up and running:
     ```bash
     make setup-env
     ```
+- Setup Milvus Cloud for vector database:
+    1. Visit [https://zilliz.com/cloud](https://zilliz.com/cloud) and create an account
+    2. Create a new cluster
+    3. Copy the cluster endpoint and token
+    4. Fill the following variables in your `.env` file:
+        - `MILVUS_CLOUD_URI`: Your cluster endpoint
+        - `MILVUS_CLOUD_TOKEN`: Your cluster token
 - Create network for the whole system. This will create network `chatbot` and add to `.env` file with the corresponding value of the network subnet:
     ```bash
     make create-network
-    ```
-- Setup folders for containers' volume:
-    ```bash
-    make setup-volumes-minio
-    ```
-    ```bash
-    make setup-volumes-milvus
-    ```
-- Start database services:
-    ```bash
-    make up-db
     ```
 - Build and start the server:
     ```bash
     make up-build-chatbot
     ```
+- Upload data to the system by accessing [http://localhost:8003/docs](http://localhost:8003/docs):
+    - Upload FAQ data in CSV format
+    - Upload document data in TXT format
+    - Or you can upload data from web URLs directly
+- Access the chatbot interface at [http://localhost:8010](http://localhost:8010):
 
----
+    ![Chatbot Interface](./media/web_ui.png)
 
-## Backup/Restore database 💾
-
-1. **Backup database**:
-    - **Minio** (the folder name should follow the date format `dd/mm/yy`):
-        ```
-        make backup-minio FOLDER=dd/mm/yy
-        ```
-    - **Milvus**:
-        1. Install **Go** if you did not:
-            ```bash
-            make install-go
-            ```
-        2. Clone `milvus-backup` repository:
-            ```bash
-            make clone-milvus-backup
-            ```
-        3. Build Milvus backup tool:
-            ```bash
-            make build-milvus-backup
-            ```
-        4. Synchronize configuration from `.env` file to the [configs.yaml](./database/backup/milvus-backup/configs/backup.yaml) file:
-            ```bash
-            make update-backup-config
-            ```
-        5. Running backup (the folder name should follow the date format `dd/mm/yy`):
-            ```bash
-            make backup-milvus FOLDER=dd/mm/yy
-            ```
-2. **Restore database**:
-    - **Minio** (the folder name should follow the date format `dd/mm/yy`):
-        ```
-        make restore-minio FOLDER=dd/mm/yy
-        ```
-    - **Milvus** (If you have already completed steps 1 to 4 in the `Backup` section, you can skip them):
-        1. Install **Go** if you did not:
-            ```bash
-            make install-go
-            ```
-        2. Clone `milvus-backup` repository:
-            ```bash
-            make clone-milvus-backup
-            ```
-        3. Build Milvus backup tool:
-            ```bash
-            make build-milvus-backup
-            ```
-        4. Synchronize configuration from `.env` file to the [configs.yaml](./database/backup/milvus-backup/configs/backup.yaml) file:
-            ```bash
-            make update-backup-config
-            ```
-        5. Running backup (the folder name should follow the date format `dd/mm/yy`):
-            ```bash
-            make restore-milvus FOLDER=dd/mm/yy
-            ```
 
 ---
 

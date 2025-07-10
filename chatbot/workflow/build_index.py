@@ -3,10 +3,9 @@ from tqdm.auto import tqdm
 
 import logging
 import pandas as pd
-from llama_index.core import Document
 from loguru import logger
 
-from chatbot.core.model_clients import BM25Client, EmbedderCore, LLMCore
+from chatbot.core.model_clients import BM25Client, BaseEmbedder, BaseLLM
 from chatbot.indexing.context_document.base_class import PreprocessingConfig, ReconstructedChunk
 from chatbot.indexing.context_document import (
     ChunkReconstructor,
@@ -20,8 +19,12 @@ from chatbot.indexing.faq import (
 )
 from chatbot.indexing.faq.base_class import FAQDocument
 from chatbot.utils.base_class import IndexData
-from chatbot.utils.database_clients.base_class import IndexParam, IndexValueType
-from chatbot.utils.database_clients import VectorDatabase
+from chatbot.utils.database_clients import BaseVectorDatabase
+from chatbot.utils.vectordb_schema import (
+    DOCUMENT_DATABASE_SCHEMA,
+    FAQ_DATABASE_SCHEMA,
+    JSON_INDEX_PARAMS
+)
 
 
 # Turn off logging for OpenAI calls
@@ -33,28 +36,31 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 class DataIndex:
     def __init__(
         self,
-        llm: LLMCore,
-        embedder: EmbedderCore,
+        llm: BaseLLM,
+        embedder: BaseEmbedder,
         document_bm25_client: BM25Client,
         faq_bm25_client: BM25Client,
         preprocessing_config: PreprocessingConfig,
-        vector_db: VectorDatabase
+        vector_db: BaseVectorDatabase
     ):
         """
         Initialize the DataIndex class.
         This class is responsible for indexing documents and FAQ context into a vector database.
 
         Args:
-            llm (LLMCore): Language model used for context extraction.
-            embedder (EmbedderCore): Embedder model to embed the documents into dense vectors.
+            llm (BaseLLM): Language model used for context extraction.
+            embedder (BaseEmbedder): Embedder model to embed the documents into dense vectors.
             document_bm25_client (BM25Client): BM25 client to embed the documents into sparse vectors.
             faq_bm25_client (BM25Client): BM25 client to embed the FAQs into sparse vectors.
             preprocessing_config (PreprocessingConfig): Configuration for preprocessing text.
-            vector_db (VectorDatabase): Vector database client for storing indexed data.
+            vector_db (BaseVectorDatabase): Vector database client for storing indexed data.
         """
         self.semantic_chunker = SemanticChunker(
             embedder=embedder,
-            preprocessing_config=preprocessing_config
+            preprocessing_config=preprocessing_config,
+            breakpoint_percentile_threshold=80,
+            min_chunk_size=100,
+            max_chunk_size=1000,
         )
         self.context_extractor = ContextExtractor(llm)
         self.chunk_reconstructor = ChunkReconstructor(llm)
@@ -155,7 +161,9 @@ class DataIndex:
 
             # Fit the BM25 client to the documents
             chunk_sparse_embeddings = self.document_bm25_client.fit_transform(
-                [document.chunk for document in index_data.documents]
+                [document.chunk for document in index_data.documents],
+                path="./chatbot/data/bm25/document/state_dict.json",
+                auto_save_local=True
             )
 
             for idx, document in enumerate(index_data.documents):
@@ -186,7 +194,9 @@ class DataIndex:
 
             # Fit the BM25 client to the FAQs
             faq_sparse_embeddings = self.faq_bm25_client.fit_transform(
-                [(faq.question + " " + faq.answer) for faq in index_data.faqs]
+                [(faq.question + " " + faq.answer) for faq in index_data.faqs],
+                path="./chatbot/data/bm25/faq/state_dict.json",
+                auto_save_local=True
             )
 
             for idx, faq in enumerate(index_data.faqs):
@@ -234,11 +244,11 @@ class DataIndex:
         logger.info("Inserting new index data and updating old index data...")
 
         # Get indexed dense embeddings
-        chunk_data = self.vector_db.get_all_vectors(
+        chunk_data = self.vector_db.get_items(
             collection_name=document_collection_name,
             field_names=["chunk_id", "chunk", "chunk_dense_embedding"]
         )
-        faq_data = self.vector_db.get_all_vectors(
+        faq_data = self.vector_db.get_items(
             collection_name=faq_collection_name,
             field_names=["faq_id", "faq", "question_dense_embedding"]
         )
@@ -252,14 +262,14 @@ class DataIndex:
         }
 
         # Add dense embeddings for the new data
-        dense_embeddings = self.embedder.get_text_embedding_batch(
+        dense_embeddings = self.embedder.get_text_embeddings(
             [document.chunk for document in index_data.documents]
         )
         for idx, document in enumerate(index_data.documents):
             # Update the dense embedding in the dictionary
             chunk_embedding_dict[document.id] = dense_embeddings[idx]
 
-        dense_embeddings = self.embedder.get_text_embedding_batch(
+        dense_embeddings = self.embedder.get_text_embeddings(
             [(faq.question + " " + faq.answer) for faq in index_data.faqs]
         )
         for idx, faq in enumerate(index_data.faqs):
@@ -269,11 +279,15 @@ class DataIndex:
         # Update BM25 state dicts
         total_chunks = [document.chunk for document in index_data.documents] + [data["chunk"] for data in chunk_data]
         chunk_sparse_embeddings = self.document_bm25_client.fit_transform(
-            data=total_chunks
+            data=total_chunks,
+            path="./chatbot/data/bm25/document/state_dict.json",
+            auto_save_local=True
         )
         total_faqs = [(faq.question + " " + faq.answer) for faq in index_data.faqs] + [data["faq"]["question"] for data in faq_data]
         faq_sparse_embeddings = self.faq_bm25_client.fit_transform(
-            data=total_faqs
+            data=total_faqs,
+            path="./chatbot/data/bm25/faq/state_dict.json",
+            auto_save_local=True
         )
 
         # Add old chunk data into index data
@@ -370,7 +384,7 @@ class DataIndex:
             extracted_context = self.context_extractor.extract_context_documents([document])
 
             # Step 2: Chunk documents
-            text_chunks = self.semantic_chunker.chunk([Document(text=document)])
+            text_chunks = self.semantic_chunker.chunk([document])
 
             # Step 3: Reconstruct documents
             reconstructed_chunks.extend(self.chunk_reconstructor.reconstruct_chunks(
@@ -420,103 +434,30 @@ class DataIndex:
         """
         logger.info(f"Creating collection {document_collection_name} in the vector database...")
 
-        # Define the chunk collection schema
-        chunk_collection_structure = [
-            {
-                "field_name": "chunk_id",
-                "field_type": "string",
-                "field_description": "ID of the chunk",
-                "is_primary": True
-            },
-            {
-                "field_name": "chunk",
-                "field_type": "string",
-                "field_description": "Content of the chunk"
-            },
-            {
-                "field_name": "chunk_dense_embedding",
-                "field_type": "float",
-                "field_description": "Dense embedding of the chunk",
-                "dimension": len(self.embedder.get_text_embedding("test")),
-                "index_type": "HNSW",
-                "metric_type": "COSINE",
-                "index_params": {"M": 16, "efConstruction": 500}
-            },
-            {
-                "field_name": "chunk_sparse_embedding",
-                "field_type": "sparse_float",
-                "field_description": "Sparse embedding of the chunk",
-            }
-        ]
-
         # Create the document collection in the vector database
         self.vector_db.create_collection(
             collection_name=document_collection_name,
-            collection_structure=chunk_collection_structure
+            collection_structure=DOCUMENT_DATABASE_SCHEMA
         )
 
         logger.info(f"Creating collection {faq_collection_name} in the vector database...")
 
-        # Define the FAQ collection schema
-        faq_collection_structure = [
-            {
-                "field_name": "faq_id",
-                "field_type": "string",
-                "field_description": "ID of the FAQ",
-                "is_primary": True
-            },
-            {
-                "field_name": "faq",
-                "field_type": "json",
-                "field_description": "Content of the FAQ",
-            },
-            {
-                "field_name": "question_dense_embedding",
-                "field_type": "float",
-                "field_description": "Dense embedding of the question",
-                "dimension": len(self.embedder.get_text_embedding("test")),
-                "index_type": "HNSW",
-                "metric_type": "COSINE",
-                "index_params": {"M": 16, "efConstruction": 500}
-            },
-            {
-                "field_name": "question_sparse_embedding",
-                "field_type": "sparse_float",
-                "field_description": "Sparse embedding of the question",
-            }
-        ]
-
-        # Define the JSON index parameters for the FAQ collection
-        json_index_params = {
-            "faq": [
-                IndexParam(
-                    indexed_key="faq['question']",
-                    index_name="question",
-                    value_type=IndexValueType.STRING
-                ),
-                IndexParam(
-                    indexed_key="faq['answer']",
-                    index_name="answer",
-                    value_type=IndexValueType.STRING
-                ),
-            ]
-        }
-
         # Create the FAQ collection in the vector database
         self.vector_db.create_collection(
             collection_name=faq_collection_name,
-            collection_structure=faq_collection_structure,
-            json_index_params=json_index_params
+            collection_structure=FAQ_DATABASE_SCHEMA,
+            json_index_params=JSON_INDEX_PARAMS
         )
         
 
 if __name__ == "__main__":
     import json
     import uuid
-    from minio import Minio
     from chatbot.config.system_config import SETTINGS
-    from chatbot.core.model_clients.load_model import init_embedder, init_llm
+    from chatbot.core.model_clients.embedder.openai import OpenAIClientConfig, OpenAIEmbedder
+    from chatbot.core.model_clients.llm.google import GoogleAIClientLLMConfig, GoogleAIClientLLM
     from chatbot.utils.base_class import ModelsConfig
+    from chatbot.utils.database_clients.milvus import MilvusVectorDatabase, MilvusConfig
 
     # Example usage
 
@@ -529,39 +470,37 @@ if __name__ == "__main__":
         # Convert the loaded JSON to a ModelsConfig object
         models_config = ModelsConfig.from_dict(models_config)
 
-    # Initialize the MinIO client for storing BM25 state dicts
-    minio_client = Minio(
-        endpoint="localhost:9000",
-        access_key=SETTINGS.MINIO_ACCESS_KEY_ID,
-        secret_key=SETTINGS.MINIO_SECRET_ACCESS_KEY,
-        secure=False
-    )
-
     # Initialize the LLM and embedder clients
-    llm = init_llm(
-        task="indexing_llm",
-        models_conf=models_config
+    embedder = OpenAIEmbedder(config=OpenAIClientConfig(
+        api_key=SETTINGS.OPENAI_API_KEY,
+        model=models_config.embedding_config.model_id,
+        model_dimensions=1536,
+    ))
+
+    llm = GoogleAIClientLLM(
+        config=GoogleAIClientLLMConfig(
+            api_key=SETTINGS.GEMINI_API_KEY,
+            model=models_config.llm_config["indexing_llm"].model_id,
+            temperature=models_config.llm_config["indexing_llm"].temperature,
+            max_tokens=models_config.llm_config["indexing_llm"].max_new_tokens,
+            thinking_budget=0, # None-thinking mode
+        )
     )
-    embedder = init_embedder(models_conf=models_config)
-    document_bm25_client = BM25Client(
-        storage=minio_client,
-        bucket_name=SETTINGS.MINIO_BUCKET_DOCUMENT_INDEX_NAME,
-        overwrite_minio_bucket=True
-    )
-    faq_bm25_client = BM25Client(
-        storage=minio_client,
-        bucket_name=SETTINGS.MINIO_BUCKET_FAQ_INDEX_NAME,
-        overwrite_minio_bucket=True
-    )
+    document_bm25_client = BM25Client()
+    faq_bm25_client = BM25Client()
 
     # Initialize the configuration for preprocessing before chunking
     preprocessing_config = PreprocessingConfig()
 
     # Initialize the vector database client
-    vector_db = VectorDatabase(
-        host="localhost",
-        port=19530,
-        run_async=False
+    vector_db = MilvusVectorDatabase(
+        config=MilvusConfig(
+            cloud_uri=SETTINGS.MILVUS_CLOUD_URI,
+            token=SETTINGS.MILVUS_CLOUD_TOKEN,
+            # host="localhost",     # Uncomment this line if you want to use a local Milvus instance
+            # port=19530,           # Uncomment this line if you want to use a local Milvus instance
+            run_async=False
+        )
     )
 
     # Initialize the Indexer
@@ -575,13 +514,13 @@ if __name__ == "__main__":
     )
     
     # Load documents from file text
-    open_file_path = "./chatbot/.data/test_document.txt"
+    open_file_path = "./chatbot/data/test_document.txt"
     with open(open_file_path, "r") as file:
         document = file.read()
     documents = [document]
 
     # Load FAQs from file csv
-    open_faq_path = "./chatbot/.data/test_faq.csv"
+    open_faq_path = "./chatbot/data/test_faq.csv"
     faq_df = pd.read_csv(open_faq_path)
     FAQs = [
         FAQDocument(
@@ -600,16 +539,16 @@ if __name__ == "__main__":
     )
 
     # Display the result
-    print("\nReconstructed Chunks:")
-    for chunk in result.documents:
-        print("--" * 20)
-        print(f"ID: {chunk.id}")
-        print(f"Document: {chunk.document}")
-        print(f"Chunk: {chunk.chunk}")
-
     print("\nGenerated FAQs:")
     for faq in result.faqs:
         print("--" * 20)
         print(f"ID: {faq.id}")
         print(f"Question: {faq.question}")
         print(f"Answer: {faq.answer}")
+
+    print("\nReconstructed Chunks:")
+    for chunk in result.documents:
+        print("--" * 20)
+        print(f"ID: {chunk.id}")
+        print(f"Document: {chunk.document}")
+        print(f"Chunk: {chunk.chunk}")

@@ -1,7 +1,7 @@
 {
     "LLM": {
         "indexing_llm": {
-            "model_id": "gemini-2.0-flash",
+            "model_id": "gemini-2.5-flash",
             "provider": "gemini",
             "temperature": 0.0,
             "max_new_tokens": 4000,
@@ -10,7 +10,7 @@
             "use_websocket": false
         },
         "retrieval_llm": {
-            "model_id": "gemini-2.0-flash",
+            "model_id": "gemini-2.5-flash",
             "provider": "gemini",
             "temperature": 0.0,
             "max_new_tokens": 2000,
@@ -19,7 +19,7 @@
             "use_websocket": false
         },
         "response_llm": {
-            "model_id": "gemini-2.0-flash",
+            "model_id": "gemini-2.5-flash",
             "provider": "gemini",
             "temperature": 0.4,
             "max_new_tokens": 1000,

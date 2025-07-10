@@ -20,10 +20,12 @@ class Settings:
         # Milvus settings
         self.MILVUS_URL = os.getenv("MILVUS_URL", "http://localhost:19530")
         self.MILVUS_MINIO_BUCKET_NAME = os.getenv("MILVUS_MINIO_BUCKET_NAME", "milvus-data")
+        self.MILVUS_CLOUD_URI = os.getenv("MILVUS_CLOUD_URI", "")
+        self.MILVUS_CLOUD_TOKEN = os.getenv("MILVUS_CLOUD_TOKEN", "")
 
         # Model serving settings
         self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "EMPTY")
-        self.OTHER_API_KEY = os.getenv("OTHER_API_KEY", "EMPTY")
+        self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "EMPTY")
 
         # Agent settings
         self.SCRAPELESS_API_KEY = os.getenv("SCRAPELESS_API_KEY", "")

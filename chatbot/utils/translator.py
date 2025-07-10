@@ -1,11 +1,7 @@
-import nltk
-nltk.download("punkt")
-nltk.download("punkt_tab")
 from nltk.tokenize import sent_tokenize
 
 from deep_translator import GoogleTranslator
 from langdetect import detect, detect_langs
-import time
 
 LANGUAGE_CODES = {
     "afrikaans": "af", "albanian": "sq", "amharic": "am", "arabic": "ar", 

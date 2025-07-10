@@ -12,8 +12,8 @@ class InsertMilvusVectorsError(Exception):
         super().__init__(self.message)
 
 
-class GetMilvusVectorsError(Exception):
-    """Exception raised for errors in getting vectors in Milvus collection."""
+class GetMilvusItemsError(Exception):
+    """Exception raised for errors in getting items in Milvus collection."""
     def __init__(self, message):
         self.message = message
         super().__init__(self.message)

@@ -57,15 +57,15 @@ up-langfuse:
 
 up-build-chatbot:
 	@echo "Building and starting Web Crawler service..."
-	@docker compose -f $(WEB_CRAWLER_DIR)/docker-compose.yml up --build -d
+	@docker compose -f $(WEB_CRAWLER_DIR)/docker-compose.yml up --build --wait -d
 	@echo "Building and starting Chatbot service..."
-	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml up --build -d
+	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml up --build --wait -d
 
 up-chatbot:
 	@echo "Starting Web Crawler service..."
-	@docker compose -f $(WEB_CRAWLER_DIR)/docker-compose.yml up -d
+	@docker compose -f $(WEB_CRAWLER_DIR)/docker-compose.yml up --wait -d
 	@echo "Starting Chatbot service..."
-	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml up -d
+	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml up --wait -d
 
 up-db:
 	@echo "Setting up database services..."
@@ -129,9 +129,9 @@ inspect-network:
 update-env:
 	@echo "Updating $(ENVIROMENT_DIR)/.env file with NETWORK_SUBNET..."
 	@mkdir -p $(ENVIROMENT_DIR) && touch $(ENVIROMENT_DIR)/.env
-	@SUBNET=$(shell docker network inspect $(NETWORK_NAME) | grep -o '"Subnet": "[^"]*' | sed 's/"Subnet": "//') && \
+	@SUBNET=$$(docker network inspect $(NETWORK_NAME) | grep -o '"Subnet": "[^"]*' | sed 's/"Subnet": "//') && \
 	if grep -q '^NETWORK_SUBNET=' $(ENVIROMENT_DIR)/.env; then \
-		sed -i '' 's/^NETWORK_SUBNET=.*/NETWORK_SUBNET=$$SUBNET/' $(ENVIROMENT_DIR)/.env; \
+		sed -i '' "s~^NETWORK_SUBNET=.*~NETWORK_SUBNET=$$SUBNET~" $(ENVIROMENT_DIR)/.env; \
 	else \
 		echo "NETWORK_SUBNET=$$SUBNET" >> $(ENVIROMENT_DIR)/.env; \
 	fi

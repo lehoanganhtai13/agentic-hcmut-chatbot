@@ -5,7 +5,7 @@ from tqdm.auto import tqdm
 
 from loguru import logger
 
-from chatbot.core.model_clients import LLMCore
+from chatbot.core.model_clients import BaseLLM
 from chatbot.indexing.context_document.base_class import ExtractedContext, ReconstructedChunk
 from chatbot.prompts.indexing.generate_title import GENERATE_TITLE_QUICK_DESCRIPTION_PROMPT_TEMPLATE
 from chatbot.prompts.indexing.rewrite_chunk import REWRITE_TEXT_CHUNK_PROMPT_TEMPLATE
@@ -24,7 +24,7 @@ class ChunkReconstructor:
     to the original document context while being independently comprehensible.
     
     Attributes:
-        llm (LLMCore): The language model used for text rewriting and title generation.
+        llm (BaseLLM): The language model used for text rewriting and title generation.
     
     Methods:
         reconstruct_chunks: Process multiple chunks with context to create enhanced text chunks.
@@ -33,13 +33,13 @@ class ChunkReconstructor:
         combine_title_and_chunk: Format title and content into a single string.
     
     Example:
-        >>> llm = LLMCore()
+        >>> llm = BaseLLM()
         >>> context = ExtractedContext(document="original doc", context="summary context")
         >>> reconstructor = ChunkReconstructor(llm)
         >>> chunks = ["text chunk 1", "text chunk 2"]
         >>> reconstructed = reconstructor.reconstruct_chunks(chunks, context)
     """
-    def __init__(self, llm: LLMCore):
+    def __init__(self, llm: BaseLLM):
         self.llm = llm
 
     def reconstruct_chunks(self, chunks: List[str], context: ExtractedContext) -> List[ReconstructedChunk]:
@@ -97,7 +97,7 @@ class ChunkReconstructor:
                     prompt=REWRITE_TEXT_CHUNK_PROMPT_TEMPLATE.format(
                         text_chunk=chunk,
                         context=context.context,
-                        max_tokens=self.llm.max_new_tokens
+                        max_tokens=self.llm.config.max_tokens,
                     )
                 ).text
 

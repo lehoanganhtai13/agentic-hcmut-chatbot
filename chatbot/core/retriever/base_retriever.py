@@ -1,9 +1,10 @@
 from typing import Dict, List
 import logging
 
-from chatbot.core.model_clients import BM25Client, EmbedderCore
-from chatbot.utils.database_clients import VectorDatabase
-from chatbot.utils.database_clients.base_class import EmbeddingData
+from chatbot.core.model_clients import BM25Client, BaseEmbedder
+from chatbot.utils.database_clients import BaseVectorDatabase
+from chatbot.utils.database_clients.base_class import EmbeddingData, EmbeddingType
+from chatbot.utils.database_clients.milvus.utils import MetricType
 
 # Turn off logging for OpenAI calls
 logging.getLogger("openai").setLevel(logging.ERROR)
@@ -24,9 +25,9 @@ class BaseHybridRetriever:
     
     Attributes:
         collection_name (str): Name of the collection in the vector database.
-        embedder (EmbedderCore): Model for generating dense embeddings.
+        embedder (BaseEmbedder): Model for generating dense embeddings.
         bm25_client (BM25Client): Client for generating sparse/BM25 embeddings.
-        vector_db (VectorDatabase): Vector database client for performing searches.
+        vector_db (BaseVectorDatabase): Vector database client for performing searches.
     
     Methods:
         retrieve: Retrieve relevant documents based on a query.
@@ -35,23 +36,26 @@ class BaseHybridRetriever:
         process_results: Process the retrieved results (to be implemented by subclasses).
     
     Example:
-        >>> embedder = EmbedderCore()
+        >>> embedder = BaseEmbedder()
         >>> bm25_client = BM25Client()
-        >>> vector_db = VectorDatabase()
-        >>> retriever = ConcreteRetriever("collection_name", embedder, bm25_client, vector_db)
+        >>> vector_db = BaseVectorDatabase()
+        >>> retriever = BaseHybridRetriever("collection_name", embedder, bm25_client, vector_db)
         >>> results = retriever.retrieve("How to apply for admission?", top_k=3)
     """
     def __init__(
         self,
         collection_name: str,
-        embedder: EmbedderCore,
+        embedder: BaseEmbedder,
         bm25_client: BM25Client,
-        vector_db: VectorDatabase
+        vector_db: BaseVectorDatabase
     ):
         self.collection_name = collection_name
         self.embedder = embedder
         self.bm25_client = bm25_client
         self.vector_db = vector_db
+
+        # Initialize the vector database collection
+        self.vector_db.load_collection(collection_name=self.collection_name)
 
     def retrieve(
         self,
@@ -71,33 +75,36 @@ class BaseHybridRetriever:
             top_k (int): The number of top documents to retrieve. Defaults to 5.
         
         Returns:
-            List[dict]: A list of dictionaries containing the expected output 
-                fields of the retrieved items.
+            List[dict]: The output is a list of dictionaries containing the search results.
+                Each dictionary corresponds to a search result and contains the fields specified 
+                in `output_fields` and `_score` field.
         """
         # Embed the query
         query_dense_embedding = self.embedder.get_query_embedding(query)
-        query_sparse_embeddings = self.bm25_client.encode_queries([query])
+        query_sparse_embedding = self.bm25_client.encode_queries([query])[0]
 
         # Prepare the embedding data
         dense_data = EmbeddingData(
             field_name=field_names["dense"],
-            embeddings=[query_dense_embedding]
+            embeddings=query_dense_embedding,
+            embedding_type=EmbeddingType.DENSE
         )
         sparse_data = EmbeddingData(
             field_name=field_names["sparse"],
-            embeddings=query_sparse_embeddings
+            embeddings=query_sparse_embedding,
+            embedding_type=EmbeddingType.SPARSE
         )
 
         # Perform hybrid search
         results = self.vector_db.hybrid_search_vectors(
-            collection_name=self.collection_name,
-            dense_data=dense_data,
-            sparse_data=sparse_data,
+            embedding_data=[dense_data, sparse_data],
             output_fields=output_fields,
-            top_k=top_k
+            top_k=top_k,
+            collection_name=self.collection_name,
+            metric_type=MetricType.IP,  # Use Inner Product for dense embeddings
         )
         
-        return results[0]
+        return results
         
 
 if __name__ == "__main__":
@@ -105,8 +112,10 @@ if __name__ == "__main__":
     from minio import Minio
 
     from chatbot.config.system_config import SETTINGS
-    from chatbot.core.model_clients.load_model import init_embedder
     from chatbot.utils.base_class import ModelsConfig
+
+    from chatbot.core.model_clients.embedder.openai import OpenAIClientConfig, OpenAIEmbedder
+    from chatbot.utils.database_clients.milvus import MilvusVectorDatabase, MilvusConfig
 
     # Example usage
     models_config = {}
@@ -115,30 +124,30 @@ if __name__ == "__main__":
         models_config = json.load(f)
 
         # Convert the loaded JSON to a ModelsConfig object
-        models_config = ModelsConfig.from_dict(models_config)
+        embedder_config = ModelsConfig.from_dict(models_config).embedding_config
+
+    if embedder_config.provider != "openai":
+        raise ValueError("Supported provider is OpenAI only for this example.")
 
     # Initialize the embedder
-    embedder = init_embedder(models_conf=models_config)
+    embedder = OpenAIEmbedder(config=OpenAIClientConfig(
+        api_key=SETTINGS.OPENAI_API_KEY,
+        model=embedder_config.model_id,
+    ))
 
-    # Initialize the MinIO client for loading BM25 state dicts
-    minio_client = Minio(
-        endpoint="localhost:9000",
-        access_key=SETTINGS.MINIO_ACCESS_KEY_ID,
-        secret_key=SETTINGS.MINIO_SECRET_ACCESS_KEY,
-        secure=False
-    )
+    # Initialize BM25 client
     bm25_client = BM25Client(
-        storage=minio_client,
-        bucket_name=SETTINGS.MINIO_BUCKET_INDEX_NAME,
+        local_path="./chatbot/data/bm25/faq/state_dict.json",
         init_without_load=False,
-        remove_after_load=True
     )
 
     # Initialize the vector database client
-    vector_db = VectorDatabase(
-        host="localhost",
-        port=19530,
-        run_async=False
+    vector_db = MilvusVectorDatabase(
+        config=MilvusConfig(
+            cloud_uri=SETTINGS.MILVUS_CLOUD_URI,
+            token=SETTINGS.MILVUS_CLOUD_TOKEN,
+            run_async=False
+        )
     )
     
     retriever = BaseHybridRetriever(
@@ -149,7 +158,6 @@ if __name__ == "__main__":
     )
     
     # Example query
-
     query = "Thầy Quản Thành Thơ là ai?"
     field_names = {
         "dense": "question_dense_embedding",
@@ -159,9 +167,11 @@ if __name__ == "__main__":
     
     results = retriever.retrieve(query, field_names, output_fields, top_k=2)
 
+    print(f"result: {(results)}")
+
     print("Retrieved results:")
     for result in results:
         print("-" * 20)
         print(f"ID: {result['faq_id']}")
-        print(f"Question: {result['entity']['faq']['question']}")
-        print(f"Answer: {result['entity']['faq']['answer']}")
+        print(f"Question: {result['faq']['question']}")
+        print(f"Answer: {result['faq']['answer']}")

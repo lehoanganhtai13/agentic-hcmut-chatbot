@@ -11,8 +11,7 @@ import httpx
 import uvicorn
 from contextlib import asynccontextmanager
 from enum import Enum
-from fastapi import BackgroundTasks, FastAPI, UploadFile, File, HTTPException
-from minio import Minio
+from fastapi import BackgroundTasks, FastAPI, UploadFile, File, HTTPException, Response
 import pandas as pd
 from pathlib import Path
 from pydantic import BaseModel
@@ -22,12 +21,13 @@ from tqdm import tqdm
 
 from chatbot.config.system_config import SETTINGS
 from chatbot.core.model_clients import BM25Client
-from chatbot.core.model_clients.load_model import init_embedder, init_llm
+from chatbot.core.model_clients.embedder.openai import OpenAIClientConfig, OpenAIEmbedder
+from chatbot.core.model_clients.llm.google import GoogleAIClientLLMConfig, GoogleAIClientLLM
 from chatbot.indexing.context_document.base_class import PreprocessingConfig
 from chatbot.indexing.faq.base_class import FAQDocument
 from chatbot.workflow.build_index import DataIndex
 from chatbot.utils.base_class import ModelsConfig
-from chatbot.utils.database_clients import VectorDatabase
+from chatbot.utils.database_clients.milvus import MilvusVectorDatabase, MilvusConfig
 
 # ------------------- Global Model Classes -------------------
 
@@ -54,9 +54,9 @@ class IndexingOutput(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global indexer, minio_client, llm, embedder, vector_db, preprocessing_config
+    global indexer, llm, embedder, vector_db, preprocessing_config
 
-    logger.info("Starting up Data Indexing server...")
+    logger.info("🚀 Starting up Data Indexing server...")
     models_config = {}
     with open("./chatbot/config/models_config.json", "r") as f:
         # Load the JSON file
@@ -65,29 +65,32 @@ async def lifespan(app: FastAPI):
         # Convert the loaded JSON to a ModelsConfig object
         models_config = ModelsConfig.from_dict(models_config)
 
-    # Initialize the MinIO client for storing BM25 state dicts
-    minio_client = Minio(
-        endpoint=SETTINGS.MINIO_URL.replace("http://", "").replace("https://", ""),
-        access_key=SETTINGS.MINIO_ACCESS_KEY_ID,
-        secret_key=SETTINGS.MINIO_SECRET_ACCESS_KEY,
-        secure=False
-    )
+    # Initialize the embedder
+    embedder = OpenAIEmbedder(config=OpenAIClientConfig(
+        api_key=SETTINGS.OPENAI_API_KEY,
+        model=models_config.embedding_config.model_id
+    ))
 
     # Initialize the LLM and embedder clients
-    llm = init_llm(
-        task="indexing_llm",
-        models_conf=models_config
+    llm = GoogleAIClientLLM(
+        config=GoogleAIClientLLMConfig(
+            api_key=SETTINGS.GEMINI_API_KEY,
+            model=models_config.llm_config["indexing_llm"].model_id,
+            temperature=models_config.llm_config["indexing_llm"].temperature,
+            max_tokens=models_config.llm_config["indexing_llm"].max_new_tokens,
+        )
     )
-    embedder = init_embedder(models_conf=models_config)
 
     # Initialize the configuration for preprocessing before chunking
     preprocessing_config = PreprocessingConfig()
 
     # Initialize the vector database client
-    vector_db = VectorDatabase(
-        host=SETTINGS.MILVUS_URL.replace("http://", "").split(":")[0],
-        port=int(SETTINGS.MILVUS_URL.split(":")[-1]),
-        run_async=False
+    vector_db = MilvusVectorDatabase(
+        config=MilvusConfig(
+            cloud_uri=SETTINGS.MILVUS_CLOUD_URI,
+            token=SETTINGS.MILVUS_CLOUD_TOKEN,
+            run_async=False
+        )
     )
     
     indexer = None
@@ -98,6 +101,21 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint to verify the server is running.
+    
+    Returns:
+        JSON response indicating the server status.
+    """
+    return Response(
+        content=json.dumps({"status": "healthy", "message": "Data Indexing Server is running."}),
+        media_type="application/json",
+        status_code=200
+    )
 
 
 @app.post("/load")
@@ -117,16 +135,8 @@ async def load(
 
             try:
                 # Initialize new BM25 models
-                document_bm25_client = BM25Client(
-                    storage=minio_client,
-                    bucket_name=SETTINGS.MINIO_BUCKET_DOCUMENT_INDEX_NAME,
-                    overwrite_minio_bucket=True
-                )
-                faq_bm25_client = BM25Client(
-                    storage=minio_client,
-                    bucket_name=SETTINGS.MINIO_BUCKET_FAQ_INDEX_NAME,
-                    overwrite_minio_bucket=True
-                )
+                document_bm25_client = BM25Client()
+                faq_bm25_client = BM25Client()
 
                 # Initialize a new indexer model
                 loaded_indexer = DataIndex(
@@ -152,16 +162,12 @@ async def load(
 
             # Load the existing BM25 models
             document_bm25_client = BM25Client(
-                storage=minio_client,
-                bucket_name=SETTINGS.MINIO_BUCKET_DOCUMENT_INDEX_NAME,
+                local_path="./chatbot/data/bm25/document/state_dict.json",
                 init_without_load=False,
-                remove_after_load=True
             )
             faq_bm25_client = BM25Client(
-                storage=minio_client,
-                bucket_name=SETTINGS.MINIO_BUCKET_FAQ_INDEX_NAME,
+                local_path="./chatbot/data/bm25/faq/state_dict.json",
                 init_without_load=False,
-                remove_after_load=True
             )
 
             # Load existing indexer model
@@ -197,47 +203,42 @@ async def load_weight(files: List[UploadFile] = File(...)):
         required_files = ["faq_state_dict.json", "document_state_dict.json"]
         # Check if the uploaded files are the expected ones
         if not all(file.filename in required_files for file in files):
-            raise HTTPException(status_code=400, detail="Uploaded files must be 'faq_state_dict.json' and 'document_state_dict.json'.")
+            raise HTTPException(
+                status_code=400,
+                detail="Uploaded files must be 'faq_state_dict.json' and 'document_state_dict.json'."
+            )
         
-        # Upload the files to MinIO
+        # Save files to local paths
         for file in files:
-            # Determine the bucket name based on the file name
-            bucket_name = ""
+            # Determine the local path based on the file name
+            local_path = ""
             if file.filename == "faq_state_dict.json":
-                bucket_name = SETTINGS.MINIO_BUCKET_FAQ_INDEX_NAME
+                local_path = "./chatbot/data/bm25/faq/state_dict.json"
             elif file.filename == "document_state_dict.json":
-                bucket_name = SETTINGS.MINIO_BUCKET_DOCUMENT_INDEX_NAME
-
-            # Read the file content
+                local_path = "./chatbot/data/bm25/document/state_dict.json"
+            else:
+                continue  # Skip unknown files
+            
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            
+            # Read file content and save to local path
             file_content = await file.read()
-
-            # Clean the bucket if it already exists
-            BM25Client(
-                storage=minio_client,
-                bucket_name=bucket_name,
-                overwrite_minio_bucket=True
-            )
-
-            minio_client.put_object(
-                bucket_name=bucket_name,
-                object_name="bm25/state_dict.json",
-                data=io.BytesIO(file_content),
-                length=len(file_content)
-            )
-            logger.info(f"Uploaded {file.filename} to MinIO.")
+            
+            # Write to local file (overwrite if exists)
+            with open(local_path, "wb") as local_file:
+                local_file.write(file_content)
+            
+            logger.info(f"Saved {file.filename} to {local_path}")
 
         # Initialize new BM25 models
         document_bm25_client = BM25Client(
-            storage=minio_client,
-            bucket_name=SETTINGS.MINIO_BUCKET_DOCUMENT_INDEX_NAME,
-            init_without_load=False,
-            remove_after_load=True
+            local_path="./chatbot/data/bm25/document/state_dict.json",
+            init_without_load=False
         )
         faq_bm25_client = BM25Client(
-            storage=minio_client,
-            bucket_name=SETTINGS.MINIO_BUCKET_FAQ_INDEX_NAME,
-            init_without_load=False,
-            remove_after_load=True
+            local_path="./chatbot/data/bm25/faq/state_dict.json",
+            init_without_load=False
         )
 
         # Initialize a new indexer model
@@ -430,6 +431,9 @@ async def run_indexing(
                 faq_collection_name=SETTINGS.MILVUS_COLLECTION_FAQ_NAME
             )
             logger.info(f"Inserted {len(documents)} documents, {len(FAQs)} FAQs into the index")
+        
+        # Notify retriever servers to reload index
+        await notify_retriever_servers()
                 
     except Exception as e:
         logger.error(f"Error during indexing: {str(e)}")
@@ -437,6 +441,24 @@ async def run_indexing(
     finally:
         # Clean up temp files
         await cleanup_temp_files(temp_files)
+
+async def notify_retriever_servers():
+    """Notify retriever servers to reload their indexes."""
+    # List of retriever server endpoints
+    endpoints = [
+        "http://document-server:8000/reload-index",
+        "http://faq-server:8000/reload-index"
+    ]
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        tasks = [client.post(endpoint) for endpoint in endpoints]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for endpoint, result in zip(endpoints, results):
+            if isinstance(result, Exception):
+                logger.warning(f"Failed to notify {endpoint}: {result}")
+            else:
+                logger.info(f"Successfully notified: {endpoint}")
 
 async def cleanup_temp_files(temp_files: List[str]):
     """Asynchronously removes temporary files."""

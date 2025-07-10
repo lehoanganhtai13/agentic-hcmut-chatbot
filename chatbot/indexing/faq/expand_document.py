@@ -3,7 +3,7 @@ import uuid
 from typing import List
 from tqdm.auto import tqdm
 
-from chatbot.core.model_clients import LLMCore
+from chatbot.core.model_clients import BaseLLM
 from chatbot.indexing.faq.base_class import FAQDocument
 from chatbot.prompts.indexing.expand_faq import FAQ_DETAIL_EXPANSION_PROMPT_TEMPLATE
 
@@ -15,18 +15,18 @@ class FaqExpander:
     This class processes FAQ documents to create new FAQ pairs that are related to the original content.
     
     Attributes:
-        llm (LLMCore): The language model used for FAQ expansion.
+        llm (BaseLLM): The language model used for FAQ expansion.
     
     Methods:
         expand_faq: Process existing FAQ documents to create expanded FAQ pairs.
     
     Example:
-        >>> llm = LLMCore()
+        >>> llm = BaseLLM()
         >>> faq_documents = [FAQDocument(question="What is AI?", answer="AI is artificial intelligence.")]
         >>> expander = FaqExpander(llm)
         >>> expanded_faqs = expander.expand_faq(faq_documents, max_pairs=3)
     """
-    def __init__(self, llm: LLMCore):
+    def __init__(self, llm: BaseLLM):
         self.llm = llm
 
     def expand_faq(
