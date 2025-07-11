@@ -80,7 +80,7 @@ services:
       - ./.data/prometheus_multiproc:/app/prometheus_multiproc
       - ./../environments:/app/environments:ro
       - .:/app/chatbot
-    command: uvicorn chatbot.server.index_server.server_app:app --host 0.0.0.0 --port 8000 --loop asyncio --reload --workers 1
+    command: uvicorn chatbot.server.index_server.server_app:app --host 0.0.0.0 --port 8000 --loop asyncio --workers 1
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -103,7 +103,7 @@ services:
       - "8010:8010"
     environment:
       GOOGLE_API_KEY: ${GEMINI_API_KEY}
-    command: ["adk", "web", "--port", "8010", "--host", "0.0.0.0"]
+    command: ["adk", "web", "--port", "8010", "--host", "0.0.0.0", "--reload"]
     depends_on:
       document-server:
         condition: service_healthy

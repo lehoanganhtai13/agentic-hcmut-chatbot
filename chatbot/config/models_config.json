@@ -1,7 +1,7 @@
 {
     "LLM": {
         "indexing_llm": {
-            "model_id": "gemini-2.5-flash",
+            "model_id": "gemini-2.5-flash-lite-preview-06-17",
             "provider": "gemini",
             "temperature": 0.0,
             "max_new_tokens": 4000,

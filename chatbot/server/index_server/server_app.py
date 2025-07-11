@@ -78,6 +78,7 @@ async def lifespan(app: FastAPI):
             model=models_config.llm_config["indexing_llm"].model_id,
             temperature=models_config.llm_config["indexing_llm"].temperature,
             max_tokens=models_config.llm_config["indexing_llm"].max_new_tokens,
+            thinking_budget=1000, # Set a reasonable thinking budget for indexing
         )
     )
 
