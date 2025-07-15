@@ -8,6 +8,7 @@ POSTGRES_DIR=./database/postgres
 LANGFUSE_DIR=./observability/langfuse
 CLICKHOUSE_DIR=./observability/clickhouse
 WEB_CRAWLER_DIR=./web_crawler
+EMBEDDER_DIR=./model_serving/embedder
 CHATBOT_DIR=./chatbot
 ENVIROMENT_DIR=./environments
 BACKUP_DIR=./database/backup
@@ -54,6 +55,10 @@ up-clickhouse:
 up-langfuse:
 	@echo "Starting Langfuse service..."
 	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(LANGFUSE_DIR)/docker-compose.yml up -d
+
+up-embedder:
+	@echo "Building and starting Embedder service..."
+	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(EMBEDDER_DIR)/docker-compose.yml up --build --wait -d
 
 up-build-chatbot:
 	@echo "Building and starting Web Crawler service..."
@@ -105,6 +110,12 @@ down-langfuse:
 	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(LANGFUSE_DIR)/docker-compose.yml down
 
 down-crawler:
+	@echo "Stopping Web Crawler service..."
+	@docker compose -f $(WEB_CRAWLER_DIR)/docker-compose.yml down
+
+down-embedder:
+	@echo "Stopping Embedder service..."
+	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(EMBEDDER_DIR)/docker-compose.yml down
 
 down-chatbot:
 	@echo "Stopping Chatbot service..."

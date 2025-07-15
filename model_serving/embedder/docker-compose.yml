@@ -1,0 +1,37 @@
+services:
+  embedder-server:
+    hostname: embedder-server
+    container_name: embedder-server
+    restart: always
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+      tags:
+        - "hcmut-chatbot/embedder-server:latest"
+    image: hcmut-chatbot/embedder-server:latest
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports:
+      - "8020:8000"
+    volumes:
+      - .:/app
+    command: uvicorn server_app:app --host 0.0.0.0 --port 8000 --loop asyncio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+    networks:
+      - chatbot
+
+networks:
+  chatbot:
+    name: chatbot
+    external: true
