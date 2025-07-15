@@ -1,6 +1,12 @@
 import os
-import torch
+from pathlib import Path
 from vllm import LLM
+
+# Load environment variables from .env file if it exists
+env_path = Path(__file__).parent / ".env"
+if env_path.exists():
+    from dotenv import load_dotenv
+    load_dotenv(env_path)
 
 
 class VLLMClient:
@@ -20,8 +26,7 @@ class VLLMClient:
         self.llm = LLM(
             model=model_name,
             task="embed",
-            enforce_eager=True,
-            device=("cuda" if torch.cuda.is_available() else "cpu"),
+            enforce_eager=True
         )
 
     def encode(self, texts: list[str]) -> list[list[float]]:

@@ -9,6 +9,7 @@ LANGFUSE_DIR=./observability/langfuse
 CLICKHOUSE_DIR=./observability/clickhouse
 WEB_CRAWLER_DIR=./web_crawler
 EMBEDDER_DIR=./model_serving/embedder
+RERANKER_DIR=./model_serving/reranker
 CHATBOT_DIR=./chatbot
 ENVIROMENT_DIR=./environments
 BACKUP_DIR=./database/backup
@@ -60,6 +61,10 @@ up-embedder:
 	@echo "Building and starting Embedder service..."
 	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(EMBEDDER_DIR)/docker-compose.yml up --build --wait -d
 
+up-reranker:
+	@echo "Building and starting Reranker service..."
+	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(RERANKER_DIR)/docker-compose.yml up --build --wait -d
+
 up-build-chatbot:
 	@echo "Building and starting Web Crawler service..."
 	@docker compose -f $(WEB_CRAWLER_DIR)/docker-compose.yml up --build --wait -d
@@ -76,6 +81,11 @@ up-db:
 	@echo "Setting up database services..."
 	@$(MAKE) up-minio
 	@$(MAKE) up-milvus
+
+up-model:
+	@echo "Setting up model serving services..."
+	@$(MAKE) up-embedder
+	@$(MAKE) up-reranker
 
 down-minio:
 	@echo "Stopping Minio service..."
@@ -117,6 +127,10 @@ down-embedder:
 	@echo "Stopping Embedder service..."
 	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(EMBEDDER_DIR)/docker-compose.yml down
 
+down-reranker:
+	@echo "Stopping Reranker service..."
+	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(RERANKER_DIR)/docker-compose.yml down
+
 down-chatbot:
 	@echo "Stopping Chatbot service..."
 	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(CHATBOT_DIR)/docker-compose.yml down
@@ -127,6 +141,11 @@ down-db:
 	@echo "Stopping database services..."
 	@$(MAKE) down-milvus
 	@$(MAKE) down-minio
+
+down-model:
+	@echo "Stopping model serving services..."
+	@$(MAKE) down-embedder
+	@$(MAKE) down-reranker
 
 # Targets for network
 create-network:

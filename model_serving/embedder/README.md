@@ -40,13 +40,13 @@ This project hosts the [AITeamVN/Vietnamese_Embedding_v2](https://huggingface.co
 docker network create chatbot
 
 # Start the service
-docker-compose up -d --build
+docker compose up --env-file .env -d --build
 
 # Check logs
-docker-compose logs -f embedder-server
+docker compose logs -f embedder-server
 
 # Stop the service
-docker-compose down
+docker compose down
 ```
 
 🔧 Manual Docker build:
