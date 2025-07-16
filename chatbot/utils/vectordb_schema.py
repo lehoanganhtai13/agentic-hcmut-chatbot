@@ -1,4 +1,6 @@
+import json
 from chatbot.config.system_config import SETTINGS
+from chatbot.utils.base_class import ModelsConfig
 from chatbot.utils.database_clients.milvus.utils import (
     DataType,
     IndexConfig,
@@ -15,12 +17,20 @@ logging.getLogger("openai").setLevel(logging.ERROR)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
+models_config = {}
+with open("./chatbot/config/models_config.json", "r") as f:
+    # Load the JSON file
+    models_config = json.load(f)
+
+    # Convert the loaded JSON to a ModelsConfig object
+    embedder_config = ModelsConfig.from_dict(models_config).embedding_config
 
 embedder = OpenAIEmbedder(
     config=OpenAIClientConfig(
-        api_key=SETTINGS.OPENAI_API_KEY,
-        model_id="text-embedding-3-small",
-        model_dimensions=1536,
+        use_openai_client=(models_config.embedding_config.provider == "openai"),
+        base_url= embedder_config.base_url,
+        query_embedding_endpoint="v1/embeddings",
+        doc_embedding_endpoint="v1/embeddings"
     )
 )
 dense_embedding_dimension = len(embedder.get_text_embedding("test"))

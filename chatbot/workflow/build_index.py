@@ -472,9 +472,10 @@ if __name__ == "__main__":
 
     # Initialize the LLM and embedder clients
     embedder = OpenAIEmbedder(config=OpenAIClientConfig(
-        api_key=SETTINGS.OPENAI_API_KEY,
-        model=models_config.embedding_config.model_id,
-        model_dimensions=1536,
+        use_openai_client=(models_config.embedding_config.provider == "openai"),
+        base_url= models_config.embedding_config.base_url,
+        query_embedding_endpoint="v1/embeddings",
+        doc_embedding_endpoint="v1/embeddings"
     ))
 
     llm = GoogleAIClientLLM(
