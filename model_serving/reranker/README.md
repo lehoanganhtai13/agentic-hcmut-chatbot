@@ -61,13 +61,13 @@ docker run -p 8030:8000 \
 
 ```bash
 curl -X POST http://localhost:8030/v1/reranking \
-   -H "Content-Type: application/json" \  
-   -d '{
-      "query": "What is artificial intelligence?",
-      "documents": [
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What is artificial intelligence?",
+    "documents": [
       "AI is a field of computer science",
       "Cats are cute animals",
       "Machine learning is a subset of AI"
-      ]
-   }'
+    ]
+  }'
 ```
