@@ -59,7 +59,7 @@ async def create_embeddings(request: EmbeddingRequest):
         try:
             embeddings = await asyncio.to_thread(
                 embedding_client.encode,
-                texts=request.inputs
+                texts=request.input
             )
         except Exception as e:
             logger.error(f"Error generating embeddings: {traceback.format_exc()}")

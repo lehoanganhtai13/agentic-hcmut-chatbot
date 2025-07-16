@@ -62,5 +62,5 @@ docker run -p 8020:8000 \
 ```bash
 curl -X POST http://localhost:8020/v1/embeddings \
   -H "Content-Type: application/json" \
-  -d '{"inputs": ["xin chao", "toi la ChatGPT"]}'
+  -d '{"input": ["xin chao", "toi la ChatGPT"]}'
 ```

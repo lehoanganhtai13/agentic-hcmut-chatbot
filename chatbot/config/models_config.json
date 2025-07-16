@@ -1,36 +1,34 @@
 {
     "LLM": {
         "indexing_llm": {
-            "model_id": "gemini-2.5-flash-lite-preview-06-17",
+            "model_id": "gemini-2.5-flash",
             "provider": "gemini",
-            "temperature": 0.0,
+            "temperature": 0.1,
             "max_new_tokens": 4000,
-            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-            "is_chat": false,
-            "use_websocket": false
+            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/"
         },
         "retrieval_llm": {
             "model_id": "gemini-2.5-flash",
             "provider": "gemini",
-            "temperature": 0.0,
+            "temperature": 0.1,
             "max_new_tokens": 2000,
-            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-            "is_chat": false,
-            "use_websocket": false
+            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/"
         },
         "response_llm": {
             "model_id": "gemini-2.5-flash",
             "provider": "gemini",
-            "temperature": 0.4,
+            "temperature": 0.1,
             "max_new_tokens": 1000,
-            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-            "is_chat": true,
-            "use_websocket": true
+            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/"
         }
     },
     "Embedding": {
         "model_id": "text-embedding-3-small",
         "provider": "openai",
         "base_url": ""
+    },
+    "Reranker": {
+        "base_url": "localhost:8030",
+        "rerank_endpoint": "/v1/reranking"
     }
 }

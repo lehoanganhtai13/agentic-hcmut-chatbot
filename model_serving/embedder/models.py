@@ -3,7 +3,7 @@ from typing import List
 
 
 class EmbeddingRequest(BaseModel):
-    inputs: List[str]
+    input: List[str]
 
 class EmbeddingItem(BaseModel):
     index: int
