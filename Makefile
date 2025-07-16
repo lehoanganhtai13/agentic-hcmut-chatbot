@@ -59,11 +59,11 @@ up-langfuse:
 
 up-embedder:
 	@echo "Building and starting Embedder service..."
-	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(EMBEDDER_DIR)/docker-compose.yml up --build --wait -d
+	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(EMBEDDER_DIR)/docker-compose.yml up --build --wait --wait-timeout 600 -d
 
 up-reranker:
 	@echo "Building and starting Reranker service..."
-	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(RERANKER_DIR)/docker-compose.yml up --build --wait -d
+	@docker compose --env-file $(ENVIROMENT_DIR)/.env -f $(RERANKER_DIR)/docker-compose.yml up --build --wait --wait-timeout 600 -d
 
 up-build-chatbot:
 	@echo "Building and starting Web Crawler service..."
