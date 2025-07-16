@@ -18,17 +18,17 @@
             "model_id": "gemini-2.5-flash",
             "provider": "gemini",
             "temperature": 0.1,
-            "max_new_tokens": 1000,
+            "max_new_tokens": 2000,
             "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/"
         }
     },
     "Embedding": {
-        "model_id": "text-embedding-3-small",
-        "provider": "openai",
-        "base_url": ""
+        "model_id": "",
+        "provider": "local",
+        "base_url": "http://embedder-server:8020"
     },
     "Reranker": {
-        "base_url": "localhost:8030",
+        "base_url": "http://reranker-server:8030",
         "rerank_endpoint": "/v1/reranking"
     }
 }

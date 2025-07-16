@@ -67,8 +67,10 @@ async def lifespan(app: FastAPI):
 
     # Initialize the embedder
     embedder = OpenAIEmbedder(config=OpenAIClientConfig(
-        api_key=SETTINGS.OPENAI_API_KEY,
-        model=models_config.embedding_config.model_id
+        use_openai_client=(models_config.embedding_config.provider == "openai"),
+        base_url= models_config.embedding_config.base_url,
+        query_embedding_endpoint="v1/embeddings",
+        doc_embedding_endpoint="v1/embeddings"
     ))
 
     # Initialize the LLM and embedder clients
@@ -78,7 +80,7 @@ async def lifespan(app: FastAPI):
             model=models_config.llm_config["indexing_llm"].model_id,
             temperature=models_config.llm_config["indexing_llm"].temperature,
             max_tokens=models_config.llm_config["indexing_llm"].max_new_tokens,
-            thinking_budget=1000, # Set a reasonable thinking budget for indexing
+            thinking_budget=0, # Set a reasonable thinking budget for indexing
         )
     )
 

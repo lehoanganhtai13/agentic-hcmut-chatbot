@@ -13,6 +13,7 @@ from starlette.responses import JSONResponse
 from chatbot.config.system_config import SETTINGS
 from chatbot.core.model_clients import BM25Client
 from chatbot.core.model_clients.embedder.openai import OpenAIClientConfig, OpenAIEmbedder
+from chatbot.core.model_clients.reranker.vllm import VLLMRerankerConfig, VLLMReranker
 from chatbot.core.retriever import FAQRetriever
 from chatbot.core.retriever.base_class import FAQRetrievalResult
 from chatbot.utils.base_class import ModelsConfig
@@ -47,6 +48,7 @@ mcp = FastMCP(
 # Global variables - initialized as None
 retriever = None
 embedder = None
+reranker = None
 vector_db = None
 
 try:
@@ -60,12 +62,23 @@ try:
 
         # Convert the loaded JSON to a ModelsConfig object
         embedder_config = ModelsConfig.from_dict(models_config).embedding_config
+        reranker_config = ModelsConfig.from_dict(models_config).reranker_config
 
     # Initialize the embedder
     embedder = OpenAIEmbedder(config=OpenAIClientConfig(
-        api_key=SETTINGS.OPENAI_API_KEY,
-        model=embedder_config.model_id
+        use_openai_client=(models_config.embedding_config.provider == "openai"),
+        base_url= embedder_config.base_url,
+        query_embedding_endpoint="v1/embeddings",
+        doc_embedding_endpoint="v1/embeddings"
     ))
+
+    # Initialize the reranker
+    reranker = VLLMReranker(
+        config=VLLMRerankerConfig(
+            base_url=reranker_config.base_url,
+            rerank_endpoint=reranker_config.rerank_endpoint
+        )
+    )
 
     # Initialize the vector database client
     vector_db = MilvusVectorDatabase(
@@ -107,7 +120,8 @@ def initialize_retriever() -> bool:
             collection_name=SETTINGS.MILVUS_COLLECTION_FAQ_NAME,
             embedder=embedder,
             bm25_client=bm25_client,
-            vector_db=vector_db
+            vector_db=vector_db,
+            reranker=reranker
         )
         
         logger.info("FAQ retriever initialized successfully.")
@@ -221,7 +235,8 @@ async def reload_index(request: Request):
                 collection_name=SETTINGS.MILVUS_COLLECTION_FAQ_NAME,
                 embedder=embedder,
                 bm25_client=new_bm25_client,
-                vector_db=vector_db
+                vector_db=vector_db,
+                reranker=reranker
             )
 
             # Cleanup old client if exists

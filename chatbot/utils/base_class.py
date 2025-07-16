@@ -54,6 +54,18 @@ class EmbeddingConfig(BaseModel):
     base_url: Optional[str] = None
 
 
+class RerankerConfig(BaseModel):
+    """
+    A class representing the configuration for a reranker model.
+
+    Attributes:
+        base_url (str): The base URL of the reranker server.
+        rerank_endpoint (str): The endpoint for reranking requests.
+    """
+    base_url: str
+    rerank_endpoint: str
+
+
 class ModelsConfig(BaseModel):
     """
     A class representing the configuration for models.
@@ -61,9 +73,11 @@ class ModelsConfig(BaseModel):
     Attributes:
         llm_config (dict): A dictionary containing configurations for different LLM tasks.
         embedding (EmbeddingConfig): The configuration for the embedding model.
+        reranker_config (RerankerConfig): The configuration for the reranker model.
     """
     llm_config: Dict[str, LLMConfig]
     embedding_config: EmbeddingConfig
+    reranker_config: RerankerConfig
 
     class Config:
         arbitrary_types_allowed = True
@@ -81,4 +95,9 @@ class ModelsConfig(BaseModel):
         """
         llm_config = {key: LLMConfig(**value) for key, value in config_dict["LLM"].items()}
         embedding_config = EmbeddingConfig(**config_dict["Embedding"])
-        return cls(llm_config=llm_config, embedding_config=embedding_config)
+        reranker_config = RerankerConfig(**config_dict["Reranker"])
+        return cls(
+            llm_config=llm_config,
+            embedding_config=embedding_config,
+            reranker_config=reranker_config
+        )
