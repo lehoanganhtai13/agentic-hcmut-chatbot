@@ -1,6 +1,7 @@
 import os
 from typing import Optional
 
+import asyncio
 import json
 import traceback
 from asyncio import Lock
@@ -67,7 +68,7 @@ try:
 
     # Initialize the embedder
     embedder = OpenAIEmbedder(config=OpenAIClientConfig(
-        use_openai_client=(models_config.embedding_config.provider == "openai"),
+        use_openai_client=(embedder_config.provider == "openai"),
         base_url= embedder_config.base_url,
         query_embedding_endpoint="v1/embeddings",
         doc_embedding_endpoint="v1/embeddings"
@@ -187,9 +188,10 @@ async def retrieve(
                     )
                 
             # Retrieve relevant documents
-            results = retriever.retrieve_documents(
+            results = await asyncio.to_thread(
+                retriever.retrieve_documents,
                 query=query,
-                top_k=top_k
+                top_k=top_k,
             )
             return DocumentRetrievalOutput(status="success", results=results)
         except Exception as e:

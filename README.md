@@ -23,20 +23,20 @@ The following steps will help you to get the system up and running:
 
 ### 1. Environment Setup
 
-- Create an `.env` file from template (adjust settings accordingly):
-    ```bash
-    make setup-env
-    ```
+Create an `.env` file from template (adjust settings accordingly):
+```bash
+make setup-env
+```
 
 ### 2. Vector Database Setup
 
-- Setup Milvus Cloud for vector database:
-    1. Visit [https://zilliz.com/cloud](https://zilliz.com/cloud) and create an account
-    2. Create a new cluster
-    3. Copy the cluster endpoint and token
-    4. Fill the following variables in your `.env` file:
-        - `MILVUS_CLOUD_URI`: Your cluster endpoint
-        - `MILVUS_CLOUD_TOKEN`: Your cluster token
+Setup Milvus Cloud for vector database:
+1. Visit [https://zilliz.com/cloud](https://zilliz.com/cloud) and create an account
+2. Create a new cluster
+3. Copy the cluster endpoint and token
+4. Fill the following variables in your `.env` file:
+    - `MILVUS_CLOUD_URI`: Your cluster endpoint
+    - `MILVUS_CLOUD_TOKEN`: Your cluster token
 
 ### 3. Model Configuration
 
@@ -109,36 +109,36 @@ If you're using an external hosted reranker:
 **🔧 Hardware Limitations:** If you don't have sufficient hardware to host the reranker, you can disable it by commenting out the reranker initialization in both retrieval servers:
 
 1. In `chatbot/server/faq_server/server_app.py`:
-```python
-# Comment out these lines to disable reranker
-# reranker = VLLMReranker(
-#     config=VLLMRerankerConfig(
-#         base_url=reranker_config.base_url,
-#         rerank_endpoint=reranker_config.rerank_endpoint
-#     )
-# )
+    ```python
+    # Comment out these lines to disable reranker
+    # reranker = VLLMReranker(
+    #     config=VLLMRerankerConfig(
+    #         base_url=reranker_config.base_url,
+    #         rerank_endpoint=reranker_config.rerank_endpoint
+    #     )
+    # )
 
-# And pass None instead:
-retriever = FAQRetriever(
-    collection_name=SETTINGS.MILVUS_COLLECTION_FAQ_NAME,
-    embedder=embedder,
-    bm25_client=bm25_client,
-    vector_db=vector_db,
-    reranker=None  # Disable reranker
-)
-```
+    # And pass None instead:
+    retriever = FAQRetriever(
+        collection_name=SETTINGS.MILVUS_COLLECTION_FAQ_NAME,
+        embedder=embedder,
+        bm25_client=bm25_client,
+        vector_db=vector_db,
+        reranker=None  # Disable reranker
+    )
+    ```
 
 2. In `chatbot/server/document_server/server_app.py`:
-```python
-# Apply the same changes for document retriever
-retriever = DocumentRetriever(
-    collection_name=SETTINGS.MILVUS_COLLECTION_DOCUMENT_NAME,
-    embedder=embedder,
-    bm25_client=bm25_client,
-    vector_db=vector_db,
-    reranker=None  # Disable reranker
-)
-```
+    ```python
+    # Apply the same changes for document retriever
+    retriever = DocumentRetriever(
+        collection_name=SETTINGS.MILVUS_COLLECTION_DOCUMENT_NAME,
+        embedder=embedder,
+        bm25_client=bm25_client,
+        vector_db=vector_db,
+        reranker=None  # Disable reranker
+    )
+    ```
 
 **Note:** Disabling the reranker will make the system use hybrid search only (semantic + keyword matching), which still provides good results but with potentially lower accuracy compared to the full pipeline with reranking.
 

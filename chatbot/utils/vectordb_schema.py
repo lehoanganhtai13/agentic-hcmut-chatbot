@@ -27,7 +27,7 @@ with open("./chatbot/config/models_config.json", "r") as f:
 
 embedder = OpenAIEmbedder(
     config=OpenAIClientConfig(
-        use_openai_client=(models_config.embedding_config.provider == "openai"),
+        use_openai_client=(embedder_config.provider == "openai"),
         base_url= embedder_config.base_url,
         query_embedding_endpoint="v1/embeddings",
         doc_embedding_endpoint="v1/embeddings"
